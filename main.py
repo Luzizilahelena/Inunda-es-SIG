@@ -3,6 +3,7 @@ import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 import matplotlib.pyplot as plt
+import flask as fs
 import numpy as np
 
 def download_and_read_gadm_json(country_code, level):
@@ -101,9 +102,37 @@ def main():
     except Exception as e:
         print(f"Erro inesperado: {e}")
 
-if __name__ == "__main__":
-    main()
+app = fs.Flask(__name__)
 
+@app.route('/flood_map')
+def flood_map():
+    country_code = fs.request.args.get('country', default='AGO', type=str).upper()
+    level = fs.request.args.get('level', default=3, type=int)
+
+    gdf = download_and_read_gadm_json(country_code, level)
+    if gdf is None or gdf.empty:
+        return fs.jsonify({"error": "Nenhum dado disponível para o país e nível especificados."}), 404
+
+    # Simulação de inundação
+    flood_prone_provinces = [
+        'Benguela', 'Bié', 'Cuando Cubango', 'Cunene', 'Cuanza Norte', 
+        'Huambo', 'Luanda', 'Lunda Sul', 'Malanje', 'Moxico', 'Uíge', 'Zaire'
+    ]
+    gdf['prone_to_flood'] = gdf['NAME_1'].isin(flood_prone_provinces)
+    flood_rate = 0.5
+    gdf['flooded'] = False
+    prone_indices = gdf[gdf['prone_to_flood']].index
+    num_to_flood = int(len(prone_indices) * flood_rate)
+    flood_indices = np.random.choice(prone_indices, num_to_flood, replace=False)
+    gdf.loc[flood_indices, 'flooded'] = True
+
+    # Converter GeoDataFrame para GeoJSON
+    geojson_data = gdf.to_json()
+
+    return fs.jsonify(geojson_data)
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 # import requests
 # import geopandas as gpd
