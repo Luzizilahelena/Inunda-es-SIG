@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Permite requisições de qualquer origem
+CORS(app)
 
 # ==================== DADOS COMPLETOS DE ANGOLA ====================
 
@@ -162,11 +162,57 @@ DISTRICTS = {
     ]
 }
 
+# ==================== FUNÇÃO DE CÁLCULO ====================
+
+def calculate_flood_risk(risk_level, flood_rate):
+    """Calcula se uma área será inundada baseado em fatores reais"""
+    risk_factors = {
+        'Muito Alto': 0.35,
+        'Alto': 0.20,
+        'Médio': 0.05,
+        'Baixo': -0.10
+    }
+    
+    risk_modifier = risk_factors.get(risk_level, 0)
+    adjusted_probability = max(0, min(1, flood_rate + risk_modifier))
+    rainfall = random.uniform(0, 500)
+    is_flooded = (random.random() < adjusted_probability) and (rainfall > 150)
+    
+    if is_flooded:
+        drainage_factor = {
+            'Muito Alto': 0.8,
+            'Alto': 0.6,
+            'Médio': 0.4,
+            'Baixo': 0.2
+        }
+        
+        retention = drainage_factor.get(risk_level, 0.5)
+        base_water = 5.0
+        max_water = 20.0
+        water_level = base_water + (rainfall / 500) * (max_water - base_water) * retention
+        water_level = round(water_level, 2)
+        
+        if water_level < 8.0:
+            severity = 'Leve'
+            recovery_days = random.randint(5, 10)
+        elif water_level < 12.0:
+            severity = 'Moderada'
+            recovery_days = random.randint(10, 20)
+        elif water_level < 16.0:
+            severity = 'Grave'
+            recovery_days = random.randint(20, 40)
+        else:
+            severity = 'Crítica'
+            recovery_days = random.randint(40, 90)
+        
+        return True, water_level, severity, recovery_days
+    else:
+        return False, 0, 'Nenhuma', 0
+
 # ==================== ROTAS ====================
 
 @app.route('/', methods=['GET'])
 def home():
-    """Página inicial da API"""
     return jsonify({
         'message': 'API de Simulação de Inundações - Angola',
         'version': '2.0.0',
@@ -183,7 +229,6 @@ def home():
 
 @app.route('/api/health', methods=['GET'])
 def health():
-    """Verifica se a API está funcionando"""
     logger.info("Health check realizado")
     return jsonify({
         'status': 'ok',
@@ -194,40 +239,11 @@ def health():
 
 @app.route('/api/info', methods=['GET'])
 def api_info():
-    """Retorna informações detalhadas sobre a API"""
     return jsonify({
         'name': 'API de Simulação de Inundações - Angola',
         'version': '2.0.0',
         'description': 'API completa para simulação e análise de inundações em Angola',
         'author': 'Sistema de Gestão de Desastres Naturais',
-        'endpoints': {
-            'GET /api/health': {
-                'description': 'Verifica status da API',
-                'parameters': None
-            },
-            'GET /api/provinces': {
-                'description': 'Lista todas as 18 províncias de Angola',
-                'parameters': None
-            },
-            'GET /api/municipalities': {
-                'description': 'Lista municípios',
-                'parameters': 'province (opcional) - filtra por província'
-            },
-            'GET /api/districts': {
-                'description': 'Lista bairros/distritos',
-                'parameters': 'municipality (opcional) - filtra por município'
-            },
-            'POST /api/simulate': {
-                'description': 'Executa simulação de inundação',
-                'parameters': {
-                    'level': 'province | municipality | district',
-                    'floodRate': 'número entre 0-100',
-                    'province': 'nome da província (opcional)',
-                    'municipality': 'nome do município (opcional)',
-                    'district': 'nome do bairro (opcional)'
-                }
-            }
-        },
         'data_available': {
             'provinces': len(PROVINCES),
             'municipalities': sum(len(m) for m in MUNICIPALITIES.values()),
@@ -237,7 +253,6 @@ def api_info():
 
 @app.route('/api/provinces', methods=['GET'])
 def get_provinces():
-    """Retorna todas as províncias"""
     logger.info("Listando províncias")
     return jsonify({
         'success': True,
@@ -248,25 +263,17 @@ def get_provinces():
 
 @app.route('/api/municipalities', methods=['GET'])
 def get_municipalities():
-    """Retorna municípios (todos ou filtrados por província)"""
     province = request.args.get('province', None)
-    
     logger.info(f"Listando municípios - Província: {province}")
     
     if province and province != 'all' and province in MUNICIPALITIES:
-        # Retorna apenas municípios da província especificada
-        municipalities = [
-            {**m, 'province': province} 
-            for m in MUNICIPALITIES[province]
-        ]
+        municipalities = [{**m, 'province': province} for m in MUNICIPALITIES[province]]
     elif province == 'all' or not province:
-        # Retorna todos os municípios
         municipalities = []
         for prov, munics in MUNICIPALITIES.items():
             for m in munics:
                 municipalities.append({**m, 'province': prov})
     else:
-        # Província não encontrada
         municipalities = []
     
     return jsonify({
@@ -279,25 +286,17 @@ def get_municipalities():
 
 @app.route('/api/districts', methods=['GET'])
 def get_districts():
-    """Retorna bairros/distritos (todos ou filtrados por município)"""
     municipality = request.args.get('municipality', None)
-    
     logger.info(f"Listando distritos - Município: {municipality}")
     
     if municipality and municipality != 'all' and municipality in DISTRICTS:
-        # Retorna apenas distritos do município especificado
-        districts = [
-            {**d, 'municipality': municipality} 
-            for d in DISTRICTS[municipality]
-        ]
+        districts = [{**d, 'municipality': municipality} for d in DISTRICTS[municipality]]
     elif municipality == 'all' or not municipality:
-        # Retorna todos os distritos
         districts = []
         for munic, dists in DISTRICTS.items():
             for d in dists:
                 districts.append({**d, 'municipality': munic})
     else:
-        # Município não encontrado
         districts = []
     
     return jsonify({
@@ -310,58 +309,32 @@ def get_districts():
 
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
-    """Executa a simulação de inundação"""
     try:
         data = request.get_json()
         
         if not data:
-            return jsonify({
-                'success': False,
-                'error': 'Dados não fornecidos'
-            }), 400
+            return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
         
-        # Parâmetros da simulação
         level = data.get('level', 'province')
         flood_rate = float(data.get('floodRate', 50)) / 100
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
-        district = data.get('district', 'all')
         
         logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, Province: {province}")
         
         results = []
         
-        # Simulação por Província
         if level == 'province':
             data_list = PROVINCES if province == 'all' else [p for p in PROVINCES if p['name'] == province]
             
             for item in data_list:
-                is_flooded = random.random() < flood_rate
+                is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
                 
-                # Calcular nível de água e severidade
                 if is_flooded:
-                    water_level = round(random.uniform(0.5, 3.5), 2)  # 0.5m a 3.5m
-                    
-                    # Determinar severidade baseada no nível de água
-                    if water_level < 1.0:
-                        severity = 'Leve'
-                        recovery_days = random.randint(3, 7)
-                    elif water_level < 2.0:
-                        severity = 'Moderada'
-                        recovery_days = random.randint(7, 15)
-                    elif water_level < 3.0:
-                        severity = 'Grave'
-                        recovery_days = random.randint(15, 30)
-                    else:
-                        severity = 'Crítica'
-                        recovery_days = random.randint(30, 60)
-                    
                     affected_comunas = random.randint(5, 20)
-                    affected_population = int(item['population'] * random.uniform(0.1, 0.3))
+                    impact_factor = min(water_level / 20.0, 0.5)
+                    affected_population = int(item['population'] * impact_factor)
                 else:
-                    water_level = 0
-                    severity = 'Nenhuma'
-                    recovery_days = 0
                     affected_comunas = 0
                     affected_population = 0
                 
@@ -375,74 +348,98 @@ def simulate_flood():
                     'affectedPopulation': affected_population
                 })
         
-        # Simulação por Município
         elif level == 'municipality':
             if province != 'all' and province in MUNICIPALITIES:
-                # Municípios apenas da província selecionada
                 data_list = MUNICIPALITIES[province]
                 for item in data_list:
-                    is_flooded = random.random() < flood_rate
-                    affected_districts = random.randint(2, 10) if is_flooded else 0
-                    affected_population = int(item['population'] * random.uniform(0.1, 0.4)) if is_flooded else 0
+                    is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
+                    
+                    if is_flooded:
+                        affected_districts = random.randint(2, 10)
+                        impact_factor = min(water_level / 20.0, 0.6)
+                        affected_population = int(item['population'] * impact_factor)
+                    else:
+                        affected_districts = 0
+                        affected_population = 0
                     
                     results.append({
                         **item,
                         'province': province,
                         'flooded': is_flooded,
+                        'waterLevel': water_level,
+                        'severity': severity,
+                        'recoveryDays': recovery_days,
                         'affectedDistricts': affected_districts,
                         'affectedPopulation': affected_population
                     })
             else:
-                # Todos os municípios
                 for prov, munics in MUNICIPALITIES.items():
                     for item in munics:
-                        is_flooded = random.random() < flood_rate
-                        affected_districts = random.randint(2, 10) if is_flooded else 0
-                        affected_population = int(item['population'] * random.uniform(0.1, 0.4)) if is_flooded else 0
+                        is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
+                        
+                        if is_flooded:
+                            affected_districts = random.randint(2, 10)
+                            impact_factor = min(water_level / 20.0, 0.6)
+                            affected_population = int(item['population'] * impact_factor)
+                        else:
+                            affected_districts = 0
+                            affected_population = 0
                         
                         results.append({
                             **item,
                             'province': prov,
                             'flooded': is_flooded,
+                            'waterLevel': water_level,
+                            'severity': severity,
+                            'recoveryDays': recovery_days,
                             'affectedDistricts': affected_districts,
                             'affectedPopulation': affected_population
                         })
         
-        # Simulação por Bairro/Distrito
         elif level == 'district':
             if municipality != 'all' and municipality in DISTRICTS:
-                # Distritos apenas do município selecionado
                 data_list = DISTRICTS[municipality]
                 for item in data_list:
-                    is_flooded = random.random() < flood_rate
-                    affected_population = int(item['population'] * random.uniform(0.2, 0.5)) if is_flooded else 0
+                    is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
+                    
+                    if is_flooded:
+                        impact_factor = min(water_level / 20.0, 0.7)
+                        affected_population = int(item['population'] * impact_factor)
+                    else:
+                        affected_population = 0
                     
                     results.append({
                         **item,
                         'municipality': municipality,
                         'flooded': is_flooded,
+                        'waterLevel': water_level,
+                        'severity': severity,
+                        'recoveryDays': recovery_days,
                         'affectedPopulation': affected_population
                     })
             else:
-                # Todos os distritos
                 for munic, dists in DISTRICTS.items():
                     for item in dists:
-                        is_flooded = random.random() < flood_rate
-                        affected_population = int(item['population'] * random.uniform(0.2, 0.5)) if is_flooded else 0
+                        is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
+                        
+                        if is_flooded:
+                            impact_factor = min(water_level / 20.0, 0.7)
+                            affected_population = int(item['population'] * impact_factor)
+                        else:
+                            affected_population = 0
                         
                         results.append({
                             **item,
                             'municipality': munic,
                             'flooded': is_flooded,
+                            'waterLevel': water_level,
+                            'severity': severity,
+                            'recoveryDays': recovery_days,
                             'affectedPopulation': affected_population
                         })
         else:
-            return jsonify({
-                'success': False,
-                'error': 'Nível inválido. Use: province, municipality ou district'
-            }), 400
+            return jsonify({'success': False, 'error': 'Nível inválido'}), 400
         
-        # Calcular estatísticas
         flooded_count = sum(1 for r in results if r['flooded'])
         total_affected = sum(r['affectedPopulation'] for r in results)
         
@@ -459,8 +456,7 @@ def simulate_flood():
                 'level': level,
                 'floodRate': flood_rate * 100,
                 'province': province,
-                'municipality': municipality,
-                'district': district
+                'municipality': municipality
             },
             'timestamp': datetime.now().isoformat()
         }
@@ -471,34 +467,19 @@ def simulate_flood():
         
     except Exception as e:
         logger.error(f"Erro na simulação: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# ==================== ERROR HANDLERS ====================
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify({
-        'success': False,
-        'error': 'Endpoint não encontrado',
-        'message': str(error)
-    }), 404
+    return jsonify({'success': False, 'error': 'Endpoint não encontrado'}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    return jsonify({
-        'success': False,
-        'error': 'Erro interno do servidor',
-        'message': str(error)
-    }), 500
-
-# ==================== MAIN ====================
+    return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("🌊 API de Simulação de Inundações - Angola v2.0")
+    print("API de Simulação de Inundações - Angola v2.0")
     print("="*60)
     print(f"📡 Servidor iniciado em: http://0.0.0.0:5000")
     print(f"📚 Documentação: http://localhost:5000/api/info")
