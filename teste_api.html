@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Inundações - Angola</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(to bottom right, #1e3c72, #2a5298);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            animation: fadeIn 0.6s;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 20px;
+            animation: fadeIn 0.8s;
+        }
+        
+        .controls-panel {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .controls-panel h2 {
+            color: #1e3c72;
+            font-size: 1.5rem;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-section {
+            margin-bottom: 25px;
+        }
+        
+        .form-section label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+        
+        .form-section select,
+        .form-section input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .form-section select:focus,
+        .form-section input[type="text"]:focus {
+            outline: none;
+            border-color: #2a5298;
+            box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.1);
+        }
+        
+        .slider-container {
+            margin-top: 10px;
+        }
+        
+        .slider-container input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: linear-gradient(to right, #4CAF50, #FFC107, #F44336);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            border: 3px solid #2a5298;
+        }
+        
+        .slider-value {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #2a5298;
+            margin: 15px 0;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .btn-simulate {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-simulate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .btn-simulate:active {
+            transform: translateY(0);
+        }
+        
+        .btn-simulate:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results-panel {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            min-height: 600px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px 20px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .stat-card .number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .results-list {
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        
+        .results-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .results-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        .results-list::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            border-left: 5px solid #667eea;
+            transition: all 0.3s;
+        }
+        
+        .result-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .result-card.flooded {
+            border-left-color: #e74c3c;
+            background: linear-gradient(to right, #fee, #f8f9fa);
+        }
+        
+        .result-card .title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 12px;
+        }
+        
+        .badges {
+            margin-bottom: 12px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 5px;
+        }
+        
+        .badge-flooded { background: #e74c3c; color: white; }
+        .badge-safe { background: #27ae60; color: white; }
+        .badge-danger { background: #c0392b; color: white; }
+        .badge-warning { background: #f39c12; color: white; }
+        .badge-success { background: #27ae60; color: white; }
+        .badge-info { background: #3498db; color: white; }
+        
+        .result-info {
+            color: #666;
+            line-height: 1.8;
+        }
+        
+        .result-info strong {
+            color: #333;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #999;
+        }
+        
+        .empty-state svg {
+            width: 120px;
+            height: 120px;
+            opacity: 0.3;
+            margin-bottom: 20px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .level-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        
+        .level-btn {
+            padding: 15px 10px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .level-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+        
+        .level-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .level-selector {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌊 Simulador de Inundações</h1>
+            <p>Sistema de Gestão de Desastres Naturais - Angola</p>
+        </div>
+        
+        <div class="main-grid">
+            <!-- Painel de Controles -->
+            <div class="controls-panel">
+                <h2>⚙️ Configurações</h2>
+                
+                <div class="form-section">
+                    <label>URL da API:</label>
+                    <input type="text" id="baseUrl" value="http://localhost:5000" placeholder="http://localhost:5000">
+                </div>
+                
+                <div class="form-section">
+                    <label>Nível de Visualização:</label>
+                    <div class="level-selector">
+                        <button class="level-btn active" onclick="selectLevel('province')">
+                            🗺️<br>Províncias
+                        </button>
+                        <button class="level-btn" onclick="selectLevel('municipality')">
+                            🏛️<br>Municípios
+                        </button>
+                        <button class="level-btn" onclick="selectLevel('district')">
+                            🏘️<br>Bairros
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <label>Taxa de Inundação:</label>
+                    <div class="slider-value" id="rateValue">50%</div>
+                    <div class="slider-container">
+                        <input type="range" id="floodRate" min="0" max="100" value="50">
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <label>Província:</label>
+                    <select id="province">
+                        <option value="all">Todas</option>
+                    </select>
+                </div>
+                
+                <div class="form-section" id="municipalitySection" style="display:none;">
+                    <label>Município:</label>
+                    <select id="municipality">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+                
+                <div class="form-section" id="districtSection" style="display:none;">
+                    <label>Bairro/Distrito:</label>
+                    <select id="district">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+                
+                <button class="btn-simulate" onclick="runSimulation()">
+                    ▶️ Executar Simulação
+                </button>
+            </div>
+            
+            <!-- Painel de Resultados -->
+            <div class="results-panel">
+                <div id="statsContainer" style="display:none;">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="number" id="statFlooded">0</div>
+                            <div class="label">Áreas Afetadas</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number" id="statPopulation">0</div>
+                            <div class="label">População Afetada</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number" id="statTotal">0</div>
+                            <div class="label">Total de Áreas</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number" id="statRisk">0%</div>
+                            <div class="label">Taxa de Risco</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="resultsContent">
+                    <div class="empty-state">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/>
+                        </svg>
+                        <h3>Nenhuma simulação executada</h3>
+                        <p>Configure os parâmetros e clique em "Executar Simulação"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let baseUrl = 'http://localhost:5000';
+        let currentLevel = 'province';
+        
+        // Atualizar slider
+        document.getElementById('floodRate').addEventListener('input', (e) => {
+            document.getElementById('rateValue').textContent = e.target.value + '%';
+        });
+        
+        // Atualizar URL
+        document.getElementById('baseUrl').addEventListener('change', (e) => {
+            baseUrl = e.target.value.replace(/\/$/, '');
+            loadProvinces();
+        });
+        
+        // Selecionar nível
+        function selectLevel(level) {
+            currentLevel = level;
+            document.querySelectorAll('.level-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.level-btn').classList.add('active');
+            
+            document.getElementById('municipalitySection').style.display = 
+                (level === 'municipality' || level === 'district') ? 'block' : 'none';
+            document.getElementById('districtSection').style.display = 
+                level === 'district' ? 'block' : 'none';
+            
+            // Resetar seleções
+            document.getElementById('municipality').value = 'all';
+            document.getElementById('district').value = 'all';
+        }
+        
+        // Carregar províncias
+        document.getElementById('province').addEventListener('change', async (e) => {
+            const province = e.target.value;
+            document.getElementById('municipality').innerHTML = '<option value="all">Todos</option>';
+            document.getElementById('district').innerHTML = '<option value="all">Todos</option>';
+            
+            if (province !== 'all') {
+                await loadMunicipalities(province);
+            }
+        });
+        
+        // Carregar municípios ao mudar
+        document.getElementById('municipality').addEventListener('change', async (e) => {
+            const municipality = e.target.value;
+            document.getElementById('district').innerHTML = '<option value="all">Todos</option>';
+            
+            if (municipality !== 'all') {
+                await loadDistricts(municipality);
+            }
+        });
+        
+        async function loadProvinces() {
+            try {
+                const response = await fetch(`${baseUrl}/api/provinces`);
+                const data = await response.json();
+                
+                const select = document.getElementById('province');
+                select.innerHTML = '<option value="all">Todas</option>';
+                
+                data.data.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.name;
+                    option.textContent = p.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                alert('Erro ao conectar com a API em: ' + baseUrl + '\nVerifique se o servidor está rodando.');
+            }
+        }
+        
+        async function loadMunicipalities(province) {
+            try {
+                const response = await fetch(`${baseUrl}/api/municipalities?province=${encodeURIComponent(province)}`);
+                const data = await response.json();
+                
+                const select = document.getElementById('municipality');
+                select.innerHTML = '<option value="all">Todos</option>';
+                
+                data.data.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m.name;
+                    option.textContent = m.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar municípios:', error);
+            }
+        }
+        
+        async function loadDistricts(municipality) {
+            try {
+                const response = await fetch(`${baseUrl}/api/districts?municipality=${encodeURIComponent(municipality)}`);
+                const data = await response.json();
+                
+                const select = document.getElementById('district');
+                select.innerHTML = '<option value="all">Todos</option>';
+                
+                data.data.forEach(d => {
+                    const option = document.createElement('option');
+                    option.value = d.name;
+                    option.textContent = d.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar distritos:', error);
+            }
+        }
+        
+        async function runSimulation() {
+            const floodRate = document.getElementById('floodRate').value;
+            const province = document.getElementById('province').value;
+            const municipality = document.getElementById('municipality').value;
+            const district = document.getElementById('district').value;
+            
+            document.getElementById('resultsContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <h3>Executando simulação...</h3>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch(`${baseUrl}/api/simulate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        level: currentLevel,
+                        floodRate: parseFloat(floodRate),
+                        province: province,
+                        municipality: municipality,
+                        district: district
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            } catch (error) {
+                alert('Erro na simulação: ' + error.message);
+            }
+        }
+        
+        function displayResults(data) {
+            document.getElementById('statsContainer').style.display = 'block';
+            document.getElementById('statFlooded').textContent = data.statistics.floodedCount;
+            document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
+            document.getElementById('statTotal').textContent = data.statistics.totalItems;
+            document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
+            
+            let html = '<div class="results-list">';
+            
+            data.data.forEach(item => {
+                const floodedClass = item.flooded ? 'flooded' : '';
+                const statusBadge = item.flooded ? 
+                    '<span class="badge badge-flooded">🌊 Inundada</span>' : 
+                    '<span class="badge badge-safe">✅ Segura</span>';
+                
+                let riskBadge = '';
+                if (item.risk) {
+                    const riskClass = item.risk === 'Muito Alto' ? 'danger' : 
+                                     item.risk === 'Alto' ? 'warning' : 
+                                     item.risk === 'Médio' ? 'info' : 'success';
+                    riskBadge = `<span class="badge badge-${riskClass}">${item.risk}</span>`;
+                }
+                
+                const typeBadge = item.type ? `<span class="badge badge-info">${item.type}</span>` : '';
+                
+                // Badge de severidade
+                let severityBadge = '';
+                if (item.severity && item.severity !== 'Nenhuma') {
+                    const severityClass = item.severity === 'Crítica' ? 'danger' : 
+                                         item.severity === 'Grave' ? 'warning' : 
+                                         item.severity === 'Moderada' ? 'info' : 'success';
+                    severityBadge = `<span class="badge badge-${severityClass}">⚠️ ${item.severity}</span>`;
+                }
+                
+                html += `
+                    <div class="result-card ${floodedClass}">
+                        <div class="title">${item.name}</div>
+                        <div class="badges">
+                            ${statusBadge}
+                            ${riskBadge}
+                            ${typeBadge}
+                            ${severityBadge}
+                        </div>
+                        <div class="result-info">
+                            ${item.population ? `<strong>População:</strong> ${formatNumber(item.population)}<br>` : ''}
+                            <strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}<br>
+                            ${item.area ? `<strong>Área:</strong> ${formatNumber(item.area)} km²<br>` : ''}
+                            ${item.waterLevel > 0 ? `<strong>🌊 Nível de Água:</strong> ${item.waterLevel}m<br>` : ''}
+                            ${item.recoveryDays > 0 ? `<strong>⏱️ Tempo de Recuperação:</strong> ${item.recoveryDays} dias<br>` : ''}
+                            ${item.affectedComunas ? `<strong>Comunas Afetadas:</strong> ${item.affectedComunas}<br>` : ''}
+                            ${item.affectedDistricts ? `<strong>Distritos Afetados:</strong> ${item.affectedDistricts}<br>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            document.getElementById('resultsContent').innerHTML = html;
+        }
+        
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+        
+        // Inicializar
+        loadProvinces();
+    </script>
+</body>
+</html>
