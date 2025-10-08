@@ -3,6 +3,11 @@ from flask_cors import CORS
 import random
 from datetime import datetime
 import logging
+import requests
+import geopandas as gpd
+from zipfile import ZipFile
+from io import BytesIO
+import numpy as np
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -11,7 +16,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# ==================== DADOS COMPLETOS DE ANGOLA ====================
+# ==================== DADOS ESTÁTICOS COMO FALLBACK ====================
 
 # Todas as 18 províncias de Angola
 PROVINCES = [
@@ -162,6 +167,24 @@ DISTRICTS = {
     ]
 }
 
+# ==================== FUNÇÃO PARA BAIXAR E LER GADM ====================
+
+def download_and_read_gadm_json(country_code, level):
+    json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
+    logger.info(f"Tentando baixar GeoJSON: {json_url}...")
+    
+    try:
+        response = requests.get(json_url)
+        response.raise_for_status()
+        with ZipFile(BytesIO(response.content)) as zip_file:
+            json_filename = zip_file.namelist()[0]
+            with zip_file.open(json_filename) as json_file:
+                gdf = gpd.read_file(json_file, driver='GeoJSON')
+        return gdf
+    except Exception as e:
+        logger.error(f"Erro ao baixar/processar GeoJSON: {e}")
+        return None
+
 # ==================== FUNÇÃO DE CÁLCULO ====================
 
 def calculate_flood_risk(risk_level, flood_rate):
@@ -190,7 +213,7 @@ def calculate_flood_risk(risk_level, flood_rate):
         base_water = 5.0
         max_water = 20.0
         water_level = base_water + (rainfall / 500) * (max_water - base_water) * retention
-        water_level = round(water_level, 2)
+        water_level = 50
         
         if water_level < 8.0:
             severity = 'Leve'
@@ -253,29 +276,75 @@ def api_info():
 
 @app.route('/api/provinces', methods=['GET'])
 def get_provinces():
-    logger.info("Listando províncias")
+    logger.info("Listando províncias do GADM")
+    gdf = download_and_read_gadm_json('AGO', 1)
+    if gdf is None:
+        return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+
+    provinces = []
+    for index, row in gdf.iterrows():
+        name = row['NAME_1']
+        static = next((p for p in PROVINCES if p['name'] == name), None)
+        pop = static['population'] if static else 0
+        area = static['area'] if static else 0
+        risk = static['risk'] if static else 'Médio'
+        id_ = static['id'] if static else index + 1
+        centroid = row['geometry'].centroid
+        provinces.append({
+            'id': id_,
+            'name': name,
+            'risk': risk,
+            'population': pop,
+            'area': area,
+            'lat': centroid.y,
+            'lon': centroid.x
+        })
     return jsonify({
         'success': True,
-        'data': PROVINCES,
-        'count': len(PROVINCES),
+        'data': provinces,
+        'count': len(provinces),
         'timestamp': datetime.now().isoformat()
     })
 
 @app.route('/api/municipalities', methods=['GET'])
 def get_municipalities():
     province = request.args.get('province', None)
-    logger.info(f"Listando municípios - Província: {province}")
+    logger.info(f"Listando municípios do GADM - Província: {province}")
     
-    if province and province != 'all' and province in MUNICIPALITIES:
-        municipalities = [{**m, 'province': province} for m in MUNICIPALITIES[province]]
-    elif province == 'all' or not province:
-        municipalities = []
-        for prov, munics in MUNICIPALITIES.items():
-            for m in munics:
-                municipalities.append({**m, 'province': prov})
-    else:
-        municipalities = []
-    
+    gdf = download_and_read_gadm_json('AGO', 2)
+    if gdf is None:
+        return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+
+    if province and province != 'all':
+        gdf = gdf[gdf['NAME_1'] == province]
+
+    municipalities = []
+    for index, row in gdf.iterrows():
+        prov = row['NAME_1']
+        name = row['NAME_2']
+        static_mun = next((m for m in MUNICIPALITIES.get(prov, []) if m['name'] == name), None)
+        if static_mun:
+            pop = static_mun['population']
+            area = static_mun['area']
+            risk = static_mun['risk']
+            id_ = static_mun['id']
+        else:
+            static_prov = next((p for p in PROVINCES if p['name'] == prov), None)
+            risk = static_prov['risk'] if static_prov else 'Médio'
+            pop = 0
+            area = 0
+            id_ = index + 1
+        centroid = row['geometry'].centroid
+        municipalities.append({
+            'id': id_,
+            'name': name,
+            'province': prov,
+            'risk': risk,
+            'population': pop,
+            'area': area,
+            'lat': centroid.y,
+            'lon': centroid.x
+        })
     return jsonify({
         'success': True,
         'data': municipalities,
@@ -311,7 +380,6 @@ def get_districts():
 def simulate_flood():
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
         
@@ -323,129 +391,83 @@ def simulate_flood():
         logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, Province: {province}")
         
         results = []
+        geojson = None
         
-        if level == 'province':
-            data_list = PROVINCES if province == 'all' else [p for p in PROVINCES if p['name'] == province]
-            
-            for item in data_list:
-                is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
-                
-                if is_flooded:
-                    affected_comunas = random.randint(5, 20)
-                    impact_factor = min(water_level / 20.0, 0.5)
-                    affected_population = int(item['population'] * impact_factor)
-                else:
-                    affected_comunas = 0
-                    affected_population = 0
-                
-                results.append({
-                    **item,
-                    'flooded': is_flooded,
-                    'waterLevel': water_level,
-                    'severity': severity,
-                    'recoveryDays': recovery_days,
-                    'affectedComunas': affected_comunas,
-                    'affectedPopulation': affected_population
-                })
-        
-        elif level == 'municipality':
-            if province != 'all' and province in MUNICIPALITIES:
-                data_list = MUNICIPALITIES[province]
-                for item in data_list:
-                    is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
-                    
-                    if is_flooded:
-                        affected_districts = random.randint(2, 10)
-                        impact_factor = min(water_level / 20.0, 0.6)
-                        affected_population = int(item['population'] * impact_factor)
-                    else:
-                        affected_districts = 0
-                        affected_population = 0
-                    
-                    results.append({
-                        **item,
-                        'province': province,
-                        'flooded': is_flooded,
-                        'waterLevel': water_level,
-                        'severity': severity,
-                        'recoveryDays': recovery_days,
-                        'affectedDistricts': affected_districts,
-                        'affectedPopulation': affected_population
-                    })
-            else:
-                for prov, munics in MUNICIPALITIES.items():
-                    for item in munics:
-                        is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
-                        
-                        if is_flooded:
-                            affected_districts = random.randint(2, 10)
-                            impact_factor = min(water_level / 20.0, 0.6)
-                            affected_population = int(item['population'] * impact_factor)
-                        else:
-                            affected_districts = 0
-                            affected_population = 0
-                        
-                        results.append({
-                            **item,
-                            'province': prov,
-                            'flooded': is_flooded,
-                            'waterLevel': water_level,
-                            'severity': severity,
-                            'recoveryDays': recovery_days,
-                            'affectedDistricts': affected_districts,
-                            'affectedPopulation': affected_population
-                        })
-        
-        elif level == 'district':
-            if municipality != 'all' and municipality in DISTRICTS:
-                data_list = DISTRICTS[municipality]
-                for item in data_list:
-                    is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
-                    
-                    if is_flooded:
-                        impact_factor = min(water_level / 20.0, 0.7)
-                        affected_population = int(item['population'] * impact_factor)
-                    else:
-                        affected_population = 0
-                    
-                    results.append({
-                        **item,
-                        'municipality': municipality,
-                        'flooded': is_flooded,
-                        'waterLevel': water_level,
-                        'severity': severity,
-                        'recoveryDays': recovery_days,
-                        'affectedPopulation': affected_population
-                    })
-            else:
-                for munic, dists in DISTRICTS.items():
-                    for item in dists:
-                        is_flooded, water_level, severity, recovery_days = calculate_flood_risk(item['risk'], flood_rate)
-                        
-                        if is_flooded:
-                            impact_factor = min(water_level / 20.0, 0.7)
-                            affected_population = int(item['population'] * impact_factor)
-                        else:
-                            affected_population = 0
-                        
-                        results.append({
-                            **item,
-                            'municipality': munic,
-                            'flooded': is_flooded,
-                            'waterLevel': water_level,
-                            'severity': severity,
-                            'recoveryDays': recovery_days,
-                            'affectedPopulation': affected_population
-                        })
-        else:
+        level_map = {'province': 1, 'municipality': 2, 'district': 3}
+        level_num = level_map.get(level)
+        if level_num is None:
             return jsonify({'success': False, 'error': 'Nível inválido'}), 400
         
-        flooded_count = sum(1 for r in results if r['flooded'])
-        total_affected = sum(r['affectedPopulation'] for r in results)
+        gdf = download_and_read_gadm_json('AGO', level_num)
+        if gdf is None:
+            return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+        
+        if province != 'all':
+            gdf = gdf[gdf['NAME_1'] == province]
+        if level == 'municipality' and municipality != 'all':
+            gdf = gdf[gdf['NAME_2'] == municipality]
+        
+        gdf['name'] = gdf[f'NAME_{level_num}']
+        gdf['flooded'] = False
+        gdf['waterLevel'] = 0.0
+        gdf['severity'] = 'Nenhuma'
+        gdf['recoveryDays'] = 0
+        gdf['affectedPopulation'] = 0
+        if level == 'province':
+            gdf['affectedComunas'] = 0
+        elif level == 'municipality':
+            gdf['affectedDistricts'] = 0
+        
+        for i, row in gdf.iterrows():
+            prov = row['NAME_1']
+            name = row[f'NAME_{level_num}']
+            
+            if level == 'province':
+                static = next((p for p in PROVINCES if p['name'] == name), None)
+            elif level == 'municipality':
+                static = next((m for m in MUNICIPALITIES.get(prov, []) if m['name'] == name), None)
+            else:  # district (comuna)
+                static = next((d for d in DISTRICTS.get(prov, []) if d['name'] == name), None)
+            if static:
+                risk = static['risk']
+                pop = static['population']
+            else:
+                static_prov = next((p for p in PROVINCES if p['name'] == prov), None)
+                risk = static_prov['risk'] if static_prov else 'Médio'
+                pop = 0
+            
+            is_flooded, water_level, severity, recovery_days = calculate_flood_risk(risk, flood_rate)
+            
+            affected_population = 0
+            if is_flooded:
+                impact_factor = min(water_level / 20.0, 0.5 if level == 'province' else 0.6 if level == 'municipality' else 0.7)
+                affected_population = int(pop * impact_factor)
+            
+            gdf.at[i, 'flooded'] = is_flooded
+            gdf.at[i, 'waterLevel'] = water_level
+            gdf.at[i, 'severity'] = severity
+            gdf.at[i, 'recoveryDays'] = recovery_days
+            gdf.at[i, 'affectedPopulation'] = affected_population
+            
+            if level == 'province' and is_flooded:
+                gdf.at[i, 'affectedComunas'] = random.randint(5, 20)
+            elif level == 'municipality' and is_flooded:
+                gdf.at[i, 'affectedDistricts'] = random.randint(2, 10)
+        
+        gdf_copy = gdf.copy()
+        gdf_copy['lat'] = gdf.geometry.centroid.y
+        gdf_copy['lon'] = gdf.geometry.centroid.x
+        results = gdf_copy.drop(columns=['geometry']).to_dict('records')
+        
+        geojson = gdf.to_json()
+        
+        flooded_count = len(gdf[gdf['flooded']])
+        total_affected = sum(item['affectedPopulation'] for item in results)
         
         response = {
             'success': True,
             'data': results,
+            'geojson': geojson,
             'statistics': {
                 'floodedCount': flooded_count,
                 'totalAffected': total_affected,
