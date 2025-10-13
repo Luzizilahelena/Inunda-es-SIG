@@ -311,7 +311,7 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
 
 # ==================== ROTAS ====================
 
-@app.route('/index')
+@app.route('/')
 def home():
     return render_template('teste_api.html')
 
