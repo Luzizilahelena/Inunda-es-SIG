@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask import render_template
 import random
 from datetime import datetime
 import logging
@@ -378,6 +379,10 @@ def get_districts():
         'filter': {'municipality': municipality} if municipality else None,
         'timestamp': datetime.now().isoformat()
     })
+    
+@app.route('/index', methods=['GET'])
+def template():
+	return render_template("teste_api.html")
 
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
