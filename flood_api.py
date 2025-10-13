@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://inunda-es-sig.onrender.com/index"])
 
 # ==================== DADOS ESTÁTICOS COMO FALLBACK ====================
 # Todas as 18 províncias de Angola
