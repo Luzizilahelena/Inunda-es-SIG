@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Inundações - Angola 🇦🇴</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        :root {
+            --primary: #0277bd;
+            --primary-light: #42a5f5;
+            --accent: #ffb300;
+            --bg: #e3f2fd;
+            --text: #263238;
+            --card-bg: #ffffff;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --danger: #d32f2f;
+            --success: #388e3c;
+            --map-normal: #e8e8e8;
+            --map-border: #666;
+            --map-flood-low: #79a6d2;
+            --map-flood-high: #003366;
+        }
+        body {
+            font-family: 'Poppins', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        header {
+            background: linear-gradient(90deg, var(--primary), var(--primary-light));
+            color: white;
+            padding: 20px 30px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        }
+        header h1 {
+            margin: 0;
+            font-weight: 700;
+            font-size: 1.8em;
+        }
+        .main-layout {
+            display: flex;
+            max-width: 1300px;
+            margin: 20px auto;
+            padding: 0 20px;
+            gap: 20px;
+        }
+        .sidebar {
+            width: 300px;
+            flex-shrink: 0;
+        }
+        .content {
+            flex-grow: 1;
+        }
+        .form-panel, .results-panel {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px var(--shadow);
+            margin-bottom: 20px;
+        }
+        .form-panel h2 {
+            color: var(--primary);
+            border-bottom: 3px solid var(--accent);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        .form-group label {
+            font-weight: 500;
+        }
+        .form-group select, .form-group input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        .form-group input#waterLevel {
+            border: none;
+            border-bottom: 2px solid var(--primary-light);
+            background-color: #f0f6ff;
+            border-radius: 0;
+            padding: 10px 8px;
+            transition: border-bottom-color 0.3s ease;
+        }
+        .form-group input#waterLevel:focus {
+            outline: none;
+            border-bottom-color: var(--primary);
+        }
+        .form-group input#waterLevel::placeholder {
+            color: #888;
+            font-style: italic;
+        }
+        .form-group button {
+            width: 100%;
+            padding: 12px 25px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        #map {
+            height: 500px;
+            margin-bottom: 25px;
+            border-radius: 12px;
+            overflow: hidden;
+            display: none;
+            box-shadow: 0 6px 16px var(--shadow);
+            border: 1px solid #ddd;
+        }
+        .map-legend {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 0.9em;
+            border-left: 5px solid var(--primary);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            border: 1px solid var(--map-border);
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background: var(--card-bg);
+            padding: 18px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-bottom: 4px solid var(--primary);
+        }
+        /* MODIFICAÇÃO: Novo estilo para a seção de resultados */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .result-card {
+            background: #f7f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--success);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .result-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .result-card.flooded {
+            border-left-color: var(--danger);
+            background: #fffafa;
+        }
+        .result-card h3 {
+            margin: 0 0 10px;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .result-card p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        .result-group {
+            margin-bottom: 20px;
+        }
+        .result-group h3 {
+            color: var(--primary);
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 5px;
+        }
+        .empty-state {
+            text-align: center;
+            font-style: italic;
+            color: #777;
+            padding: 40px;
+            border: 1px dashed #ccc;
+            border-radius: 10px;
+            background: #fdfdff;
+        }
+        .error-message {
+            color: var(--danger);
+            font-size: 0.9em;
+            padding: 10px;
+            background: #ffebee;
+            border-radius: 8px;
+        }
+        @media (max-width: 900px) {
+            .main-layout {
+                flex-direction: column;
+                padding: 0 15px;
+            }
+            .sidebar {
+                width: 100%;
+            }
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>💧 Simulador de Impacto de Inundações - Angola 🇦🇴</h1>
+    </header>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="form-panel">
+                <h2>Configurações da Simulação</h2>
+                <div class="form-group">
+                    <label for="level">Nível de Análise:</label>
+                    <select id="level">
+                        <option value="province">Província</option>
+                        <option value="municipality">Município</option>
+                        <option value="district">Distrito</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="province">Província:</label>
+                    <select id="province">
+                        <option value="all">Todas</option>
+                    </select>
+                </div>
+                <div class="form-group" id="municipality-group" style="display: none;">
+                    <label for="municipality">Município:</label>
+                    <select id="municipality">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="floodRate">Taxa Crítica de Inundação (%):</label>
+                    <input type="number" id="floodRate" value="50" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="waterLevel">
+                        Nível de Água (m) <em>(opcional – se informado, a simulação usará esse valor)</em>:
+                    </label>
+                    <input type="number" id="waterLevel" placeholder="Ex.: 12.5" step="0.1" min="0">
+                </div>
+                <div class="form-group">
+                    <button onclick="runSimulation()">🌊 Executar Simulação</button>
+                </div>
+                <div id="errorMessage" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="results-panel">
+                <div id="statsContainer" style="display: none;">
+                    <h2>📊 Estatísticas da Simulação</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>Áreas Inundadas</h3>
+                            <p id="statFlooded">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>População Afetada</h3>
+                            <p id="statPopulation">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Total de Áreas</h3>
+                            <p id="statTotal">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Risco Médio (%)</h3>
+                            <p id="statRisk">0%</p>
+                        </div>
+                    </div>
+                </div>
+                <h2>🗺️ Visualização Geoespacial</h2>
+                <div id="map"></div>
+                <h2>📋 Resultados Detalhados</h2>
+                <div id="resultsContent">
+                    <p class="empty-state">💡 Configure e execute uma simulação no painel lateral para visualizar os dados de risco e as áreas afetadas.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let map = null;
+        function formatNumber(num) {
+            return new Intl.NumberFormat('pt-BR').format(num);
+        }
+        function getColorByWaterLevel(level) {
+            if (level === 0) return 'var(--map-normal)';
+            const maxLevel = 5;
+            const intensity = Math.min(level / maxLevel, 1);
+            const r_start = 121, g_start = 166, b_start = 210;
+            const r_end = 0, g_end = 51, b_end = 102;
+            const r = Math.round(r_start + (r_end - r_start) * intensity);
+            const g = Math.round(g_start + (g_end - g_start) * intensity);
+            const b = Math.round(b_start + (b_end - b_start) * intensity);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+        function getMapStyle(feature) {
+            const isFlooded = feature.properties.flooded;
+            const waterLevel = feature.properties.waterLevel || 0;
+            const fillColor = isFlooded ? getColorByWaterLevel(waterLevel) : 'var(--map-normal)';
+            return {
+                fillColor: fillColor,
+                fillOpacity: isFlooded ? 0.8 : 0.6,
+                color: 'var(--map-border)',
+                weight: isFlooded ? 1.0 : 0.8,
+                opacity: 0.8,
+            };
+        }
+        function loadProvinces() {
+            fetch('http://localhost:5000/api/provinces')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const provinceSelect = document.getElementById('province');
+                        provinceSelect.innerHTML = '<option value="all">Todas</option>';
+                        data.data.forEach(prov => {
+                            const option = document.createElement('option');
+                            option.value = prov.name;
+                            option.textContent = prov.name;
+                            provinceSelect.appendChild(option);
+                        });
+                    } else {
+                        showError('Erro ao carregar províncias: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Erro ao conectar com a API (províncias): ' + error.message);
+                });
+        }
+        function loadMunicipalities(province) {
+            const municipalityGroup = document.getElementById('municipality-group');
+            const municipalitySelect = document.getElementById('municipality');
+            if (province === 'all') {
+                municipalityGroup.style.display = 'none';
+                municipalitySelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+            fetch(`http://localhost:5000/api/municipalities?province=${encodeURIComponent(province)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        municipalityGroup.style.display = 'block';
+                        municipalitySelect.innerHTML = '<option value="all">Todos</option>';
+                        data.data.forEach(mun => {
+                            const option = document.createElement('option');
+                            option.value = mun.name;
+                            option.textContent = mun.name;
+                            municipalitySelect.appendChild(option);
+                        });
+                    } else {
+                        showError('Erro ao carregar municípios: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Erro ao conectar com a API (municípios): ' + error.message);
+                });
+        }
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            console.error(message);
+        }
+        function clearError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+        function runSimulation() {
+            clearError();
+            const level = document.getElementById('level').value;
+            const province = document.getElementById('province').value;
+            const municipality = document.getElementById('municipality').value;
+            const floodRate = document.getElementById('floodRate').value;
+            const waterLevelInput = document.getElementById('waterLevel').value.trim();
+            if (parseFloat(floodRate) < 0 || parseFloat(floodRate) > 100) {
+                showError('A Taxa de Inundação deve estar entre 0 e 100.');
+                return;
+            }
+            let waterLevel = null;
+            if (waterLevelInput !== '') {
+                const wl = parseFloat(waterLevelInput);
+                if (isNaN(wl) || wl < 0) {
+                    showError('O nível de água deve ser um número maior ou igual a 0.');
+                    return;
+                }
+                waterLevel = wl;
+            }
+            const payload = {
+                level: level,
+                province: province,
+                municipality: (level === 'municipality' || level === 'district') ? municipality : 'all',
+                floodRate: parseFloat(floodRate),
+                waterLevel: waterLevel
+            };
+            document.getElementById('resultsContent').innerHTML = '<p class="empty-state">⏳ Executando simulação... Aguarde.</p>';
+            document.getElementById('map').style.display = 'block';
+            document.getElementById('statsContainer').style.display = 'none';
+            fetch('http://localhost:5000/api/simulate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayResults(data);
+                    } else {
+                        showError('Erro na simulação: ' + data.error);
+                        document.getElementById('resultsContent').innerHTML = '<p class="empty-state">❌ Simulação falhou. Verifique o console.</p>';
+                    }
+                })
+                .catch(error => {
+                    showError('Erro ao executar simulação: ' + error.message);
+                    document.getElementById('resultsContent').innerHTML = '<p class="empty-state">❌ Simulação falhou. Verifique o console.</p>';
+                });
+        }
+        function displayResults(data) {
+            document.getElementById('statsContainer').style.display = 'block';
+            document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
+            document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
+            document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
+            document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
+            const mapContainer = document.getElementById('map');
+            if (data.geojson) {
+                mapContainer.style.display = 'block';
+                if (map) map.remove();
+                map = L.map('map').setView([-12.5, 18.5], 5);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                    attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, CartoDB',
+                    maxZoom: 18,
+                }).addTo(map);
+                const geoJsonData = JSON.parse(data.geojson);
+                const geoJsonLayer = L.geoJSON(geoJsonData, {
+                    style: getMapStyle,
+                    onEachFeature: function(feature, layer) {
+                        const floodedStatus = feature.properties.flooded
+                            ? `<span style="color: var(--danger); font-weight: bold;">Sim (Risco Alto)</span>`
+                            : `<span style="color: var(--success);">Não</span>`;
+                        const popupContent = `
+                            <div style="font-family: 'Poppins', sans-serif;">
+                                <h4 style="margin: 0 0 5px; color: var(--primary);">${feature.properties.name}</h4>
+                                <hr style="margin: 5px 0; border-top: 1px solid #eee;">
+                                <p style="margin: 3px 0;"><strong>Inundada:</strong> ${floodedStatus}</p>
+                                <p style="margin: 3px 0;"><strong>Nível de Água:</strong> ${feature.properties.waterLevel.toFixed(2)} m</p>
+                                <p style="margin: 3px 0;"><strong>População Afetada:</strong> ${formatNumber(feature.properties.affectedPopulation)}</p>
+                            </div>
+                        `;
+                        layer.bindPopup(popupContent);
+                        layer.on({
+                            mouseover: (e) => {
+                                e.target.setStyle({ weight: 2, color: 'black', fillOpacity: 0.9 });
+                            },
+                            mouseout: (e) => {
+                                geoJsonLayer.resetStyle(e.target);
+                            }
+                        });
+                    }
+                }).addTo(map);
+                map.fitBounds(geoJsonLayer.getBounds(), { padding: [20, 20] });
+                const legend = L.control({position: 'bottomright'});
+                legend.onAdd = function (map) {
+                    const div = L.DomUtil.create('div', 'map-legend');
+                    div.innerHTML += '<h4>Legenda do Risco</h4>';
+                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-normal); border-color: var(--map-border);"></span> Não Inundada</div>';
+                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-flood-low); border-color: var(--map-border);"></span> Baixa Severidade</div>';
+                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-flood-high); border-color: var(--map-border);"></span> Alta Severidade</div>';
+                    return div;
+                };
+                map.eachLayer(function (layer) {
+                    if (layer.options && layer.options.position === 'bottomright') {
+                        map.removeControl(layer);
+                    }
+                });
+                legend.addTo(map);
+            } else {
+                mapContainer.style.display = 'none';
+            }
+            // MODIFICAÇÃO: Nova estrutura de resultados com agrupamento
+            let html = '';
+            if (data.parameters.level === 'municipality' && data.parameters.province !== 'all') {
+                html += `<div class="result-group"><h3>Resultados para ${data.parameters.province}</h3><div class="results-grid">`;
+                data.data.forEach(item => {
+                    const icon = item.flooded ? '🚨' : '✅';
+                    html += `
+                        <div class="result-card ${item.flooded ? 'flooded' : ''}">
+                            <h3>${icon} ${item.name}</h3>
+                            <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
+                            <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
+                            <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
+                            <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            } else if (data.parameters.level === 'district' && data.parameters.municipality !== 'all') {
+                html += `<div class="result-group"><h3>Resultados para ${data.parameters.municipality} (${data.parameters.province})</h3><div class="results-grid">`;
+                data.data.forEach(item => {
+                    const icon = item.flooded ? '🚨' : '✅';
+                    html += `
+                        <div class="result-card ${item.flooded ? 'flooded' : ''}">
+                            <h3>${icon} ${item.name}</h3>
+                            <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
+                            <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
+                            <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
+                            <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            } else {
+                // Agrupar por província para nível 'province' ou quando province='all'
+                const groupedData = {};
+                data.data.forEach(item => {
+                    const province = item.province || 'Outros';
+                    if (!groupedData[province]) {
+                        groupedData[province] = [];
+                    }
+                    groupedData[province].push(item);
+                });
+                Object.keys(groupedData).sort().forEach(province => {
+                    html += `<div class="result-group"><h3>${province}</h3><div class="results-grid">`;
+                    groupedData[province].forEach(item => {
+                        const icon = item.flooded ? '🚨' : '✅';
+                        html += `
+                            <div class="result-card ${item.flooded ? 'flooded' : ''}">
+                                <h3>${icon} ${item.name}</h3>
+                                <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
+                                <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
+                                <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
+                                <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
+                            </div>
+                        `;
+                    });
+                    html += '</div></div>';
+                });
+            }
+            document.getElementById('resultsContent').innerHTML = html;
+        }
+        document.getElementById('level').addEventListener('change', function() {
+            const level = this.value;
+            const municipalityGroup = document.getElementById('municipality-group');
+            municipalityGroup.style.display = (level === 'municipality' || level === 'district') ? 'block' : 'none';
+        });
+        document.getElementById('province').addEventListener('change', function() {
+            const province = this.value;
+            loadMunicipalities(province);
+        });
+        window.onload = function() {
+            loadProvinces();
+        };
+    </script>
+</body>
+</html>

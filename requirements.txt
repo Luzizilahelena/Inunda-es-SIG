@@ -1,0 +1,8 @@
+Flask
+flask-cors
+gunicorn
+requests
+geopandas
+numpy
+
+#gunicorn é importante — é o servidor de produção que o Render usa para rodar Flask.

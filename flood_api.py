@@ -17,7 +17,6 @@ app = Flask(__name__)
 CORS(app)
 
 # ==================== DADOS ESTÁTICOS COMO FALLBACK ====================
-
 # Todas as 18 províncias de Angola
 PROVINCES = [
     {'id': 1, 'name': 'Bengo', 'risk': 'Alto', 'population': 356641, 'area': 31371},
@@ -168,7 +167,6 @@ DISTRICTS = {
 }
 
 # ==================== FUNÇÃO PARA BAIXAR E LER GADM ====================
-
 def download_and_read_gadm_json(country_code, level):
     json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
     logger.info(f"Tentando baixar GeoJSON: {json_url}...")
@@ -186,8 +184,7 @@ def download_and_read_gadm_json(country_code, level):
         return None
 
 # ==================== FUNÇÃO DE CÁLCULO ====================
-
-def calculate_flood_risk(risk_level, flood_rate):
+def calculate_flood_risk(risk_level, flood_rate, specified_water_level=None):
     """Calcula se uma área será inundada baseado em fatores reais"""
     risk_factors = {
         'Muito Alto': 0.35,
@@ -199,22 +196,31 @@ def calculate_flood_risk(risk_level, flood_rate):
     risk_modifier = risk_factors.get(risk_level, 0)
     adjusted_probability = max(0, min(1, flood_rate + risk_modifier))
     rainfall = random.uniform(0, 500)
-    is_flooded = (random.random() < adjusted_probability) and (rainfall > 150)
+    
+    if specified_water_level is not None:
+        # MODIFICAÇÃO: Se nível de água for especificado, use-o diretamente e force inundação se > 0
+        water_level = max(0, specified_water_level)  # Garanta que seja >= 0
+        is_flooded = water_level > 0
+    else:
+        # Cálculo dinâmico original (sem override estático)
+        is_flooded = (random.random() < adjusted_probability) and (rainfall > 150)
+        if is_flooded:
+            drainage_factor = {
+                'Muito Alto': 0.8,
+                'Alto': 0.6,
+                'Médio': 0.4,
+                'Baixo': 0.2
+            }
+            
+            retention = drainage_factor.get(risk_level, 0.5)
+            base_water = 5.0
+            max_water = 20.0
+            water_level = base_water + (rainfall / 500) * (max_water - base_water) * retention
+        else:
+            water_level = 0
     
     if is_flooded:
-        drainage_factor = {
-            'Muito Alto': 0.8,
-            'Alto': 0.6,
-            'Médio': 0.4,
-            'Baixo': 0.2
-        }
-        
-        retention = drainage_factor.get(risk_level, 0.5)
-        base_water = 5.0
-        max_water = 20.0
-        water_level = base_water + (rainfall / 500) * (max_water - base_water) * retention
-        water_level = 50
-        
+        # MODIFICAÇÃO: Severidade baseada no water_level (seja calculado ou especificado)
         if water_level < 8.0:
             severity = 'Leve'
             recovery_days = random.randint(5, 10)
@@ -227,13 +233,13 @@ def calculate_flood_risk(risk_level, flood_rate):
         else:
             severity = 'Crítica'
             recovery_days = random.randint(40, 90)
-        
-        return True, water_level, severity, recovery_days
     else:
-        return False, 0, 'Nenhuma', 0
+        severity = 'Nenhuma'
+        recovery_days = 0
+    
+    return is_flooded, water_level, severity, recovery_days
 
 # ==================== ROTAS ====================
-
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
@@ -280,7 +286,6 @@ def get_provinces():
     gdf = download_and_read_gadm_json('AGO', 1)
     if gdf is None:
         return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-
     provinces = []
     for index, row in gdf.iterrows():
         name = row['NAME_1']
@@ -314,10 +319,8 @@ def get_municipalities():
     gdf = download_and_read_gadm_json('AGO', 2)
     if gdf is None:
         return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-
     if province and province != 'all':
         gdf = gdf[gdf['NAME_1'] == province]
-
     municipalities = []
     for index, row in gdf.iterrows():
         prov = row['NAME_1']
@@ -385,10 +388,12 @@ def simulate_flood():
         
         level = data.get('level', 'province')
         flood_rate = float(data.get('floodRate', 50)) / 100
+        # MODIFICAÇÃO: Adicionar parâmetro opcional para nível de água especificado
+        specified_water_level = data.get('waterLevel', None)  # Em metros, ex.: 10.5
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
         
-        logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, Province: {province}")
+        logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, WaterLevel: {specified_water_level}, Province: {province}")
         
         results = []
         geojson = None
@@ -436,7 +441,10 @@ def simulate_flood():
                 risk = static_prov['risk'] if static_prov else 'Médio'
                 pop = 0
             
-            is_flooded, water_level, severity, recovery_days = calculate_flood_risk(risk, flood_rate)
+            # MODIFICAÇÃO: Passar specified_water_level para a função de cálculo
+            is_flooded, water_level, severity, recovery_days = calculate_flood_risk(
+                risk, flood_rate, specified_water_level
+            )
             
             affected_population = 0
             if is_flooded:
@@ -477,6 +485,7 @@ def simulate_flood():
             'parameters': {
                 'level': level,
                 'floodRate': flood_rate * 100,
+                'waterLevel': specified_water_level,  # MODIFICAÇÃO: Incluir no response para depuração
                 'province': province,
                 'municipality': municipality
             },
