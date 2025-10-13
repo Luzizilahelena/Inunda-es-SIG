@@ -18,13 +18,14 @@ app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
         "origins": [
-            "http://localhost:5000",           # frontend local
-            "https://inunda-es-sig.onrender.com/index"  # frontend hospedado
+            "http://localhost:5000/index",     
+            "https://inunda-es-sig.onrender.com/index" 
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
-    }       
+    }
 })
+
 
 # ==================== DADOS ESTÁTICOS COMO FALLBACK ====================
 # Todas as 18 províncias de Angola
