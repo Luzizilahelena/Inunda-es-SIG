@@ -1,7 +1,9 @@
-from flask import Flask, request, jsonify
+import os
+
+os.system("pip install -r requirements.txt")
+
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from flask import render_template
-import random
 from datetime import datetime
 import logging
 import requests
@@ -15,19 +17,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "http://localhost:5000/index",     
-            "https://inunda-es-sig.onrender.com/index" 
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
-
+CORS(app)
 
 # ==================== DADOS ESTÁTICOS COMO FALLBACK ====================
+
 # Todas as 18 províncias de Angola
 PROVINCES = [
     {'id': 1, 'name': 'Bengo', 'risk': 'Alto', 'population': 356641, 'area': 31371},
@@ -178,10 +171,29 @@ DISTRICTS = {
 }
 
 # ==================== FUNÇÃO PARA BAIXAR E LER GADM ====================
+
+# Cache global para dados GADM (evitar downloads repetidos)
+GADM_CACHE = {}
+
+# Mapeamento de nomes alternativos (dados estáticos → GADM)
+# Para resolver inconsistências entre dados hardcoded e GADM
+MUNICIPALITY_NAME_MAPPING = {
+    'Caimbambo': 'Caiambambo',  # Benguela - variação ortográfica
+    'Catumbela': 'Catumbela',   # Pode não existir no GADM - usar fallback
+    # Adicionar mais mapeamentos conforme necessário
+}
+
 def download_and_read_gadm_json(country_code, level):
-    json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
-    logger.info(f"Tentando baixar GeoJSON: {json_url}...")
+    cache_key = f"{country_code}_{level}"
     
+    # Verificar se já está em cache
+    if cache_key in GADM_CACHE:
+        logger.info(f"Usando dados GADM do cache: Level {level}")
+        return GADM_CACHE[cache_key]
+    
+    json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
+    logger.info(f"Baixando GeoJSON pela primeira vez: {json_url}...")
+
     try:
         response = requests.get(json_url)
         response.raise_for_status()
@@ -189,14 +201,71 @@ def download_and_read_gadm_json(country_code, level):
             json_filename = zip_file.namelist()[0]
             with zip_file.open(json_filename) as json_file:
                 gdf = gpd.read_file(json_file, driver='GeoJSON')
+        
+        # Armazenar em cache
+        GADM_CACHE[cache_key] = gdf
+        logger.info(f"Dados GADM Level {level} armazenados em cache")
         return gdf
     except Exception as e:
         logger.error(f"Erro ao baixar/processar GeoJSON: {e}")
         return None
 
+def normalize_name(name):
+    """Normaliza nomes para comparação (remove espaços, hífens, acentos e converte para minúsculas)"""
+    import unicodedata
+    # Remove acentos
+    name = unicodedata.normalize('NFD', name)
+    name = ''.join(char for char in name if unicodedata.category(char) != 'Mn')
+    # Remove espaços, hífens e converte para minúsculas
+    name = name.replace(' ', '').replace('-', '').replace('_', '').lower()
+    return name
+
+def find_commune_in_gadm(district_name, municipality_name, gdf):
+    """
+    Encontra a comuna correspondente no GeoDataFrame do GADM
+    usando correspondência fuzzy de nomes
+    """
+    district_normalized = normalize_name(district_name)
+    municipality_normalized = normalize_name(municipality_name)
+    
+    # Filtrar por município primeiro
+    municipality_data = gdf[gdf['NAME_2'].apply(normalize_name) == municipality_normalized]
+    
+    if len(municipality_data) == 0:
+        logger.warning(f"Município '{municipality_name}' não encontrado no GADM")
+        return None
+    
+    # Procurar distrito/comuna
+    for idx, row in municipality_data.iterrows():
+        commune_normalized = normalize_name(row['NAME_3'])
+        
+        # Correspondência exata
+        if commune_normalized == district_normalized:
+            return row
+        
+        # Correspondência parcial (comuna contém distrito ou vice-versa)
+        if district_normalized in commune_normalized or commune_normalized in district_normalized:
+            return row
+    
+    # Se não encontrar, retornar o primeiro da lista do município
+    logger.warning(f"Distrito '{district_name}' não encontrado exatamente em '{municipality_name}', usando primeira comuna disponível")
+    return municipality_data.iloc[0] if len(municipality_data) > 0 else None
+
 # ==================== FUNÇÃO DE CÁLCULO ====================
-def calculate_flood_risk(risk_level, flood_rate, specified_water_level=None):
-    """Calcula se uma área será inundada baseado em fatores reais"""
+
+def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevation=0):
+    """
+    Calcula se uma área será inundada baseado em fatores reais e determinísticos.
+    
+    Args:
+        risk_level: Nível de risco da área ('Muito Alto', 'Alto', 'Médio', 'Baixo')
+        flood_rate: Taxa de inundação (0-1)
+        water_level_input: Nível de água fornecido pelo usuário em metros (0-100)
+        area_elevation: Elevação da área (usado para cálculos mais precisos)
+    
+    Returns:
+        (is_flooded, water_level, severity, recovery_days)
+    """
     risk_factors = {
         'Muito Alto': 0.35,
         'Alto': 0.20,
@@ -204,55 +273,50 @@ def calculate_flood_risk(risk_level, flood_rate, specified_water_level=None):
         'Baixo': -0.10
     }
     
-    risk_modifier = risk_factors.get(risk_level, 0)
-    adjusted_probability = max(0, min(1, flood_rate + risk_modifier))
-    rainfall = random.uniform(0, 500)
+    drainage_factor = {
+        'Muito Alto': 0.9,
+        'Alto': 0.7,
+        'Médio': 0.5,
+        'Baixo': 0.3
+    }
     
-    if specified_water_level is not None:
-        # MODIFICAÇÃO: Se nível de água for especificado, use-o diretamente e force inundação se > 0
-        water_level = max(0, specified_water_level)  # Garanta que seja >= 0
-        is_flooded = water_level > 0
-    else:
-        # Cálculo dinâmico original (sem override estático)
-        is_flooded = (random.random() < adjusted_probability) and (rainfall > 150)
-        if is_flooded:
-            drainage_factor = {
-                'Muito Alto': 0.8,
-                'Alto': 0.6,
-                'Médio': 0.4,
-                'Baixo': 0.2
-            }
-            
-            retention = drainage_factor.get(risk_level, 0.5)
-            base_water = 5.0
-            max_water = 20.0
-            water_level = base_water + (rainfall / 500) * (max_water - base_water) * retention
-        else:
-            water_level = 0
+    risk_modifier = risk_factors.get(risk_level, 0)
+    drainage = drainage_factor.get(risk_level, 0.5)
+    
+    adjusted_probability = max(0, min(1, flood_rate + risk_modifier))
+    
+    effective_water_level = water_level_input * drainage * adjusted_probability
+    
+    is_flooded = effective_water_level > 2.0
     
     if is_flooded:
-        # MODIFICAÇÃO: Severidade baseada no water_level (seja calculado ou especificado)
+        water_level = effective_water_level
+        
         if water_level < 8.0:
             severity = 'Leve'
-            recovery_days = random.randint(5, 10)
-        elif water_level < 12.0:
+            recovery_days = int(7 + water_level * 0.5)
+        elif water_level < 15.0:
             severity = 'Moderada'
-            recovery_days = random.randint(10, 20)
-        elif water_level < 16.0:
+            recovery_days = int(15 + water_level * 1.0)
+        elif water_level < 25.0:
             severity = 'Grave'
-            recovery_days = random.randint(20, 40)
+            recovery_days = int(30 + water_level * 1.5)
         else:
             severity = 'Crítica'
-            recovery_days = random.randint(40, 90)
+            recovery_days = int(60 + water_level * 2.0)
+        
+        return True, water_level, severity, recovery_days
     else:
-        severity = 'Nenhuma'
-        recovery_days = 0
-    
-    return is_flooded, water_level, severity, recovery_days
+        return False, 0, 'Nenhuma', 0
 
 # ==================== ROTAS ====================
-@app.route('/', methods=['GET'])
+
+@app.route('/')
 def home():
+    return render_template('index.html')
+
+@app.route('/api', methods=['GET'])
+def api_home():
     return jsonify({
         'message': 'API de Simulação de Inundações - Angola',
         'version': '2.0.0',
@@ -297,6 +361,7 @@ def get_provinces():
     gdf = download_and_read_gadm_json('AGO', 1)
     if gdf is None:
         return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+
     provinces = []
     for index, row in gdf.iterrows():
         name = row['NAME_1']
@@ -326,12 +391,14 @@ def get_provinces():
 def get_municipalities():
     province = request.args.get('province', None)
     logger.info(f"Listando municípios do GADM - Província: {province}")
-    
+
     gdf = download_and_read_gadm_json('AGO', 2)
     if gdf is None:
         return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+
     if province and province != 'all':
         gdf = gdf[gdf['NAME_1'] == province]
+
     municipalities = []
     for index, row in gdf.iterrows():
         prov = row['NAME_1']
@@ -370,29 +437,97 @@ def get_municipalities():
 @app.route('/api/districts', methods=['GET'])
 def get_districts():
     municipality = request.args.get('municipality', None)
-    logger.info(f"Listando distritos - Município: {municipality}")
+    province = request.args.get('province', None)
+    logger.info(f"Listando distritos do GADM - Município: {municipality}, Província: {province}")
     
-    if municipality and municipality != 'all' and municipality in DISTRICTS:
-        districts = [{**d, 'municipality': municipality} for d in DISTRICTS[municipality]]
-    elif municipality == 'all' or not municipality:
-        districts = []
-        for munic, dists in DISTRICTS.items():
-            for d in dists:
-                districts.append({**d, 'municipality': munic})
+    # Normalizar nome do município (converter hífen em espaço)
+    if municipality:
+        municipality = municipality.replace('-', ' ')
+    
+    # Carregar dados do GADM Level 3 (comunas/distritos)
+    gdf_level3 = download_and_read_gadm_json('AGO', 3)
+    if gdf_level3 is None:
+        logger.error("Erro ao carregar GADM Level 3")
+        return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+    
+    # Carregar dados do GADM Level 2 (municípios) para obter informações adicionais
+    gdf_level2 = download_and_read_gadm_json('AGO', 2)
+    
+    districts = []
+    
+    # Filtrar por província se especificado
+    if province and province != 'all':
+        gdf_level3 = gdf_level3[gdf_level3['NAME_1'] == province]
+    
+    # Filtrar por município se especificado
+    if municipality and municipality != 'all':
+        municipality_normalized = normalize_name(municipality)
+        gdf_filtered = gdf_level3[gdf_level3['NAME_2'].apply(normalize_name) == municipality_normalized]
     else:
-        districts = []
+        gdf_filtered = gdf_level3
+    
+    # Processar cada distrito/comuna do GADM
+    for index, row in gdf_filtered.iterrows():
+        district_name = row['NAME_3']
+        mun_name = row['NAME_2']
+        prov_name = row['NAME_1']
+        
+        # Verificar se existe dados estáticos para este distrito
+        static_district = None
+        if mun_name in DISTRICTS:
+            static_district = next((d for d in DISTRICTS[mun_name] if normalize_name(d['name']) == normalize_name(district_name)), None)
+        
+        if static_district:
+            # Usar dados estáticos se existirem
+            pop = static_district.get('population', 50000)
+            district_type = static_district.get('type', 'Urbano')
+            risk = static_district.get('risk', 'Médio')
+        else:
+            # Gerar dados baseados na província e município
+            # Obter dados do município
+            if gdf_level2 is not None:
+                mun_data = gdf_level2[gdf_level2['NAME_2'] == mun_name]
+                if len(mun_data) > 0:
+                    # Estimar população do distrito com base no município
+                    # Município grande = distritos maiores
+                    base_pop = 50000
+                else:
+                    base_pop = 30000
+            else:
+                base_pop = 50000
+            
+            pop = base_pop
+            district_type = 'Urbano'
+            
+            # Obter risco da província
+            static_prov = next((p for p in PROVINCES if p['name'] == prov_name), None)
+            risk = static_prov['risk'] if static_prov else 'Médio'
+        
+        # Calcular centróide para coordenadas
+        centroid = row['geometry'].centroid
+        
+        districts.append({
+            'id': index + 1,
+            'name': district_name,
+            'municipality': mun_name,
+            'province': prov_name,
+            'population': pop,
+            'type': district_type,
+            'risk': risk,
+            'lat': centroid.y,
+            'lon': centroid.x
+        })
     
     return jsonify({
         'success': True,
         'data': districts,
         'count': len(districts),
-        'filter': {'municipality': municipality} if municipality else None,
+        'filter': {
+            'municipality': municipality if municipality else None,
+            'province': province if province else None
+        },
         'timestamp': datetime.now().isoformat()
     })
-    
-@app.route('/index', methods=['GET'])
-def template():
-	return render_template("teste_api.html")
 
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
@@ -400,33 +535,309 @@ def simulate_flood():
         data = request.get_json()
         if not data:
             return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
-        
+
         level = data.get('level', 'province')
         flood_rate = float(data.get('floodRate', 50)) / 100
-        # MODIFICAÇÃO: Adicionar parâmetro opcional para nível de água especificado
-        specified_water_level = data.get('waterLevel', None)  # Em metros, ex.: 10.5
+        water_level_input = float(data.get('waterLevel', 50))
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
-        
-        logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, WaterLevel: {specified_water_level}, Province: {province}")
-        
+        district = data.get('district', 'all')
+
+        logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, WaterLevel: {water_level_input}m, Province: {province}, Municipality: {municipality}, District: {district}")
+
         results = []
         geojson = None
+
+        if level == 'district':
+            # Normalizar nome do município
+            logger.info(f"Município recebido (antes da normalização): '{municipality}'")
+            if municipality and municipality != 'all':
+                # Converter hífen em espaço
+                municipality = municipality.replace('-', ' ')
+                # Adicionar espaço antes de maiúsculas no meio da palavra (ex: KilambaKiaxi -> Kilamba Kiaxi)
+                import re
+                municipality = re.sub(r'([a-z])([A-Z])', r'\1 \2', municipality)
+            logger.info(f"Município após normalização: '{municipality}'")
+            
+            # Baixar dados GADM nível 2 (municípios) e nível 3 (comunas)
+            gdf_level2 = download_and_read_gadm_json('AGO', 2)
+            gdf_level3 = download_and_read_gadm_json('AGO', 3)
+            
+            if gdf_level2 is None or gdf_level3 is None:
+                return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+            
+            munic_to_province = {}
+            for prov_name, munics in MUNICIPALITIES.items():
+                for m in munics:
+                    munic_to_province[m['name']] = prov_name
+            
+            # ESTRATÉGIA: Tentar dados estáticos primeiro, se não houver, usar GADM
+            districts_to_process = []
+            
+            # 1. Tentar obter distritos estáticos
+            if municipality != 'all' and municipality in DISTRICTS:
+                # Município tem dados hardcoded, usar esses
+                for d in DISTRICTS[municipality]:
+                    if district != 'all' and d['name'] != district:
+                        continue
+                    dist_data = {**d, 'municipality': municipality}
+                    districts_to_process.append(dist_data)
+                logger.info(f"Usando {len(districts_to_process)} distritos estáticos para {municipality}")
+            elif municipality == 'all':
+                # Usar todos os distritos estáticos
+                for munic, dists in DISTRICTS.items():
+                    munic_province = munic_to_province.get(munic)
+                    if province != 'all' and munic_province != province:
+                        continue
+                    for d in dists:
+                        if district != 'all' and d['name'] != district:
+                            continue
+                        dist_data = {**d, 'municipality': munic}
+                        districts_to_process.append(dist_data)
+                logger.info(f"Usando {len(districts_to_process)} distritos estáticos")
+            else:
+                # 2. Município não tem dados estáticos, buscar do GADM
+                logger.info(f"Município '{municipality}' não tem dados estáticos, buscando do GADM")
+                
+                # Aplicar mapeamento de nomes se necessário
+                municipality_gadm = MUNICIPALITY_NAME_MAPPING.get(municipality, municipality)
+                municipality_normalized = normalize_name(municipality_gadm)
+                
+                # Filtrar por município no GADM Level 3
+                gdf_mun_districts = gdf_level3[gdf_level3['NAME_2'].apply(normalize_name) == municipality_normalized]
+                
+                if len(gdf_mun_districts) > 0:
+                    # Encontrou distritos/comunas no GADM Level 3
+                    for idx, row in gdf_mun_districts.iterrows():
+                        dist_name = row['NAME_3']
+                        prov_name = row['NAME_1']
+                        
+                        # Obter risco da província
+                        static_prov = next((p for p in PROVINCES if p['name'] == prov_name), None)
+                        risk = static_prov['risk'] if static_prov else 'Médio'
+                        
+                        dist_data = {
+                            'name': dist_name,
+                            'municipality': municipality,
+                            'population': 50000,  # Estimativa padrão
+                            'type': 'Urbano',
+                            'risk': risk
+                        }
+                        districts_to_process.append(dist_data)
+                    
+                    logger.info(f"Encontrados {len(districts_to_process)} distritos do GADM Level 3 para {municipality}")
+                else:
+                    # Fallback: se não houver Level 3, usar o próprio município como distrito único
+                    logger.warning(f"Nenhum distrito Level 3 encontrado para {municipality}, usando o município como distrito único")
+                    
+                    # Buscar dados estáticos do município
+                    static_mun = None
+                    for prov_munics in MUNICIPALITIES.values():
+                        static_mun = next((m for m in prov_munics if m['name'] == municipality), None)
+                        if static_mun:
+                            break
+                    
+                    if static_mun:
+                        # Usar dados estáticos do município
+                        pop = static_mun['population']
+                        risk = static_mun['risk']
+                        
+                        dist_data = {
+                            'name': municipality,  # Usar o nome do município
+                            'municipality': municipality,
+                            'population': pop,
+                            'type': 'Municipal',
+                            'risk': risk,
+                            'is_municipality_fallback': True  # Marca para tratamento especial
+                        }
+                        districts_to_process.append(dist_data)
+                        logger.info(f"Usando município {municipality} como distrito único com dados estáticos (fallback)")
+                    else:
+                        # Buscar no GADM Level 2 se não houver dados estáticos
+                        gdf_mun_level2 = gdf_level2[gdf_level2['NAME_2'].apply(normalize_name) == municipality_normalized]
+                        
+                        if len(gdf_mun_level2) > 0:
+                            row = gdf_mun_level2.iloc[0]
+                            prov_name = row['NAME_1']
+                            
+                            # Obter risco da província
+                            static_prov = next((p for p in PROVINCES if p['name'] == prov_name), None)
+                            risk = static_prov['risk'] if static_prov else 'Médio'
+                            
+                            dist_data = {
+                                'name': municipality,
+                                'municipality': municipality,
+                                'population': 100000,
+                                'type': 'Municipal',
+                                'risk': risk,
+                                'is_municipality_fallback': True
+                            }
+                            districts_to_process.append(dist_data)
+                            logger.info(f"Usando município {municipality} como distrito único do GADM Level 2 (fallback)")
+                        else:
+                            logger.error(f"Município {municipality} não encontrado nem em dados estáticos nem no GADM!")
+            
+            results = []
+            features = []
+            
+            for dist in districts_to_process:
+                risk = dist['risk']
+                pop = dist['population']
+                
+                is_flooded, water_level, severity, recovery_days = calculate_flood_risk(risk, flood_rate, water_level_input)
+                
+                affected_population = 0
+                if is_flooded:
+                    impact_factor = min(water_level / 20.0, 0.7)
+                    affected_population = int(pop * impact_factor)
+                
+                results.append({
+                    'name': dist['name'],
+                    'municipality': dist['municipality'],
+                    'flooded': is_flooded,
+                    'waterLevel': water_level,
+                    'severity': severity,
+                    'recoveryDays': recovery_days,
+                    'affectedPopulation': affected_population
+                })
+                
+                # Primeiro, tentar encontrar como município (Level 2)
+                dist_normalized = normalize_name(dist['name'])
+                found_geom = None
+                
+                # Filtrar por província se especificado
+                if province != 'all':
+                    gdf_filtered = gdf_level2[gdf_level2['NAME_1'] == province]
+                else:
+                    gdf_filtered = gdf_level2
+                
+                # Procurar distrito como município (Level 2)
+                for idx, row in gdf_filtered.iterrows():
+                    if normalize_name(row['NAME_2']) == dist_normalized:
+                        found_geom = row['geometry']
+                        logger.info(f"Distrito '{dist['name']}' encontrado como município (Level 2)")
+                        break
+                
+                # Se não encontrar como município, tentar como comuna (Level 3)
+                if found_geom is None:
+                    commune_row = find_commune_in_gadm(dist['name'], dist['municipality'], gdf_level3)
+                    if commune_row is not None:
+                        found_geom = commune_row['geometry']
+                        logger.info(f"Distrito '{dist['name']}' encontrado como comuna (Level 3)")
+                
+                if found_geom is not None:
+                    # Converter geometria para GeoJSON
+                    import json
+                    geom_json = json.loads(gpd.GeoSeries([found_geom]).to_json())['features'][0]['geometry']
+                    
+                    features.append({
+                        'type': 'Feature',
+                        'geometry': geom_json,
+                        'properties': {
+                            'name': dist['name'],
+                            'municipality': dist['municipality'],
+                            'flooded': is_flooded,
+                            'waterLevel': water_level,
+                            'severity': severity,
+                            'recoveryDays': recovery_days,
+                            'affectedPopulation': affected_population
+                        }
+                    })
+                else:
+                    # Fallback: usar centróide da província ou município
+                    logger.warning(f"Não foi possível encontrar geometria para {dist['name']}, usando fallback")
+                    
+                    # Tentar encontrar o centróide do município primeiro
+                    fallback_coords = None
+                    
+                    # Procurar município na cache do Level 2
+                    for idx, row in gdf_level2.iterrows():
+                        if normalize_name(row['NAME_2']) == normalize_name(dist['municipality']):
+                            centroid = row['geometry'].centroid
+                            fallback_coords = [centroid.x, centroid.y]
+                            logger.info(f"Usando centróide do município {dist['municipality']} como fallback")
+                            break
+                    
+                    # Se não encontrar município, usar centróide da província
+                    if fallback_coords is None and province != 'all':
+                        gdf_prov = download_and_read_gadm_json('AGO', 1)
+                        if gdf_prov is not None:
+                            prov_row = gdf_prov[gdf_prov['NAME_1'] == province]
+                            if len(prov_row) > 0:
+                                centroid = prov_row.iloc[0]['geometry'].centroid
+                                fallback_coords = [centroid.x, centroid.y]
+                                logger.info(f"Usando centróide da província {province} como fallback")
+                    
+                    # Último recurso: coordenadas de Luanda (capital)
+                    if fallback_coords is None:
+                        fallback_coords = [13.2437, -8.8383]  # Luanda, Angola
+                        logger.warning(f"Usando coordenadas de Luanda como último recurso para {dist['name']}")
+                    
+                    features.append({
+                        'type': 'Feature',
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': fallback_coords
+                        },
+                        'properties': {
+                            'name': dist['name'],
+                            'municipality': dist['municipality'],
+                            'flooded': is_flooded,
+                            'waterLevel': water_level,
+                            'severity': severity,
+                            'recoveryDays': recovery_days,
+                            'affectedPopulation': affected_population
+                        }
+                    })
+            
+            flooded_count = sum(1 for r in results if r['flooded'])
+            total_affected = sum(r['affectedPopulation'] for r in results)
+            
+            geojson_data = {
+                'type': 'FeatureCollection',
+                'features': features
+            }
+            
+            import json
+            geojson = json.dumps(geojson_data)
+            
+            response = {
+                'success': True,
+                'data': results,
+                'geojson': geojson,
+                'statistics': {
+                    'floodedCount': flooded_count,
+                    'totalAffected': total_affected,
+                    'totalItems': len(results),
+                    'avgRisk': (flooded_count / len(results) * 100) if results else 0
+                },
+                'parameters': {
+                    'level': level,
+                    'floodRate': flood_rate * 100,
+                    'province': province,
+                    'municipality': municipality,
+                    'district': district
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            logger.info(f"Simulação de distrito concluída - {flooded_count} de {len(results)} áreas inundadas")
+            return jsonify(response)
         
-        level_map = {'province': 1, 'municipality': 2, 'district': 3}
+        level_map = {'province': 1, 'municipality': 2}
         level_num = level_map.get(level)
         if level_num is None:
             return jsonify({'success': False, 'error': 'Nível inválido'}), 400
-        
+
         gdf = download_and_read_gadm_json('AGO', level_num)
         if gdf is None:
             return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-        
+
         if province != 'all':
             gdf = gdf[gdf['NAME_1'] == province]
         if level == 'municipality' and municipality != 'all':
             gdf = gdf[gdf['NAME_2'] == municipality]
-        
+
         gdf['name'] = gdf[f'NAME_{level_num}']
         gdf['flooded'] = False
         gdf['waterLevel'] = 0.0
@@ -437,11 +848,11 @@ def simulate_flood():
             gdf['affectedComunas'] = 0
         elif level == 'municipality':
             gdf['affectedDistricts'] = 0
-        
+
         for i, row in gdf.iterrows():
             prov = row['NAME_1']
             name = row[f'NAME_{level_num}']
-            
+
             if level == 'province':
                 static = next((p for p in PROVINCES if p['name'] == name), None)
             elif level == 'municipality':
@@ -455,38 +866,37 @@ def simulate_flood():
                 static_prov = next((p for p in PROVINCES if p['name'] == prov), None)
                 risk = static_prov['risk'] if static_prov else 'Médio'
                 pop = 0
-            
-            # MODIFICAÇÃO: Passar specified_water_level para a função de cálculo
-            is_flooded, water_level, severity, recovery_days = calculate_flood_risk(
-                risk, flood_rate, specified_water_level
-            )
-            
+
+            is_flooded, water_level, severity, recovery_days = calculate_flood_risk(risk, flood_rate, water_level_input)
+
             affected_population = 0
             if is_flooded:
                 impact_factor = min(water_level / 20.0, 0.5 if level == 'province' else 0.6 if level == 'municipality' else 0.7)
                 affected_population = int(pop * impact_factor)
-            
+
             gdf.at[i, 'flooded'] = is_flooded
             gdf.at[i, 'waterLevel'] = water_level
             gdf.at[i, 'severity'] = severity
             gdf.at[i, 'recoveryDays'] = recovery_days
             gdf.at[i, 'affectedPopulation'] = affected_population
-            
+
             if level == 'province' and is_flooded:
-                gdf.at[i, 'affectedComunas'] = random.randint(5, 20)
+                affected_comunas = int(5 + (water_level / 100) * 15)
+                gdf.at[i, 'affectedComunas'] = affected_comunas
             elif level == 'municipality' and is_flooded:
-                gdf.at[i, 'affectedDistricts'] = random.randint(2, 10)
-        
+                affected_districts = int(2 + (water_level / 100) * 8)
+                gdf.at[i, 'affectedDistricts'] = affected_districts
+
         gdf_copy = gdf.copy()
         gdf_copy['lat'] = gdf.geometry.centroid.y
         gdf_copy['lon'] = gdf.geometry.centroid.x
         results = gdf_copy.drop(columns=['geometry']).to_dict('records')
-        
+
         geojson = gdf.to_json()
-        
+
         flooded_count = len(gdf[gdf['flooded']])
         total_affected = sum(item['affectedPopulation'] for item in results)
-        
+
         response = {
             'success': True,
             'data': results,
@@ -500,17 +910,17 @@ def simulate_flood():
             'parameters': {
                 'level': level,
                 'floodRate': flood_rate * 100,
-                'waterLevel': specified_water_level,  # MODIFICAÇÃO: Incluir no response para depuração
                 'province': province,
-                'municipality': municipality
+                'municipality': municipality,
+                'district': district
             },
             'timestamp': datetime.now().isoformat()
         }
-        
+
         logger.info(f"Simulação concluída - {flooded_count} de {len(results)} áreas inundadas")
-        
+
         return jsonify(response)
-        
+
     except Exception as e:
         logger.error(f"Erro na simulação: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -534,5 +944,5 @@ if __name__ == '__main__':
     print(f"🏛️ Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
     print(f"🏘️ Bairros: {sum(len(d) for d in DISTRICTS.values())}")
     print("="*60 + "\n")
-    
+
     app.run(debug=True, host='0.0.0.0', port=5000)
