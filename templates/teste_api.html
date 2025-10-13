@@ -362,7 +362,7 @@
                 municipalitySelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
-            fetch(`https://inunda-es-sig.onrender.com/municipalities?province=${encodeURIComponent(province)}`)
+            fetch('https://inunda-es-sig.onrender.com/api/municipalities?province=${encodeURIComponent(province)}')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
