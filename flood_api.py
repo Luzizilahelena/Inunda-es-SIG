@@ -311,9 +311,9 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
 
 # ==================== ROTAS ====================
 
-@app.route('/')
+@app.route('/index')
 def home():
-    return render_template('index.html')
+    return render_template('teste_api.html')
 
 @app.route('/api', methods=['GET'])
 def api_home():
@@ -538,7 +538,11 @@ def simulate_flood():
 
         level = data.get('level', 'province')
         flood_rate = float(data.get('floodRate', 50)) / 100
-        water_level_input = float(data.get('waterLevel', 50))
+        water_level = data.get('waterLevel')
+        if water_level is not None:
+        	water_level_input = float(data.get('waterLevel', 50))
+        else:
+        	water_level_input = 5.5
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
         district = data.get('district', 'all')
