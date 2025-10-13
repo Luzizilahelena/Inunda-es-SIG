@@ -334,7 +334,7 @@
             };
         }
         function loadProvinces() {
-            fetch('http://localhost:5000/api/provinces')
+            fetch('https://inunda-es-sig.onrender.com/api/provinces')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -362,7 +362,7 @@
                 municipalitySelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
-            fetch(`http://localhost:5000/api/municipalities?province=${encodeURIComponent(province)}`)
+            fetch(`https://inunda-es-sig.onrender.com/municipalities?province=${encodeURIComponent(province)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -421,7 +421,7 @@
             document.getElementById('resultsContent').innerHTML = '<p class="empty-state">⏳ Executando simulação... Aguarde.</p>';
             document.getElementById('map').style.display = 'block';
             document.getElementById('statsContainer').style.display = 'none';
-            fetch('http://localhost:5000/api/simulate', {
+            fetch('https://inunda-es-sig.onrender.com/api/simulate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
