@@ -79,7 +79,7 @@
             padding-bottom: 10px;
             margin-top: 0;
         }
-        
+
         .form-group { margin-bottom: 18px; }
         .form-group label { font-weight: 500; }
         .form-group select, .form-group input[type="number"] {
@@ -138,7 +138,7 @@
             margin-right: 8px;
             border-radius: 3px;
         }
-        
+
         /* Estilos dos Cartões de Estatística e Resultados (MANTIDOS) */
         .stats-grid {
             display: grid;
@@ -220,9 +220,19 @@
                         <option value="all">Todos</option>
                     </select>
                 </div>
+                <div class="form-group" id="district-group" style="display: none;">
+                    <label for="district">Distrito:</label>
+                    <select id="district">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
                 <div class="form-group">
                     <label for="floodRate">Taxa Crítica de Inundação (%):</label>
                     <input type="number" id="floodRate" value="50" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="waterLevel">Nível de Água (metros):</label>
+                    <input type="number" id="waterLevel" value="50" min="0" max="100" step="0.1">
                 </div>
                 <div class="form-group">
                     <button onclick="runSimulation()">🌊 Executar Simulação</button>
@@ -257,7 +267,7 @@
 
                 <h2>🗺️ Visualização Geoespacial</h2>
                 <div id="map"></div>
-                
+
                 <h2>📋 Resultados Detalhados</h2>
                 <div id="resultsContent">
                     <p class="empty-state">💡 Configure e execute uma simulação no painel lateral para visualizar os dados de risco e as áreas afetadas.</p>
@@ -288,7 +298,7 @@
             // Gradiente de Azul: Claro (Baixa severidade) para Escuro (Alta severidade)
             const r_start = 121, g_start = 166, b_start = 210; // Cor do map-flood-low
             const r_end = 0, g_end = 51, b_end = 102;        // Cor do map-flood-high
-            
+
             const r = Math.round(r_start + (r_end - r_start) * intensity);
             const g = Math.round(g_start + (g_end - g_start) * intensity);
             const b = Math.round(b_start + (b_end - b_start) * intensity);
@@ -316,7 +326,7 @@
         // --- Funções de API e Simulação (Mantidas) ---
 
         function loadProvinces() {
-            fetch('http://localhost:5000/api/provinces')
+            fetch('/api/provinces')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -340,12 +350,17 @@
         function loadMunicipalities(province) {
             const municipalityGroup = document.getElementById('municipality-group');
             const municipalitySelect = document.getElementById('municipality');
+            const districtGroup = document.getElementById('district-group');
+            const districtSelect = document.getElementById('district');
+            
             if (province === 'all') {
                 municipalityGroup.style.display = 'none';
                 municipalitySelect.innerHTML = '<option value="all">Todos</option>';
+                districtGroup.style.display = 'none';
+                districtSelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
-            fetch(`http://localhost:5000/api/municipalities?province=${encodeURIComponent(province)}`)
+            fetch(`/api/municipalities?province=${encodeURIComponent(province)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -363,6 +378,43 @@
                 })
                 .catch(error => {
                     showError('Erro ao conectar com a API (municípios): ' + error.message);
+                });
+        }
+
+        function loadDistricts(municipality) {
+            const districtGroup = document.getElementById('district-group');
+            const districtSelect = document.getElementById('district');
+            
+            if (municipality === 'all') {
+                districtGroup.style.display = 'none';
+                districtSelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+            
+            // Corrigir nomes de municípios que perderam espaços
+            let correctedMunicipality = municipality;
+            if (municipality === 'KilambaKiaxi') {
+                correctedMunicipality = 'Kilamba Kiaxi';
+            }
+            
+            fetch(`/api/districts?municipality=${encodeURIComponent(correctedMunicipality)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        districtGroup.style.display = 'block';
+                        districtSelect.innerHTML = '<option value="all">Todos</option>';
+                        data.data.forEach(dist => {
+                            const option = document.createElement('option');
+                            option.value = dist.name;
+                            option.textContent = dist.name;
+                            districtSelect.appendChild(option);
+                        });
+                    } else {
+                        showError('Erro ao carregar distritos: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Erro ao conectar com a API (distritos): ' + error.message);
                 });
         }
 
@@ -389,18 +441,28 @@
                 return;
             }
 
+            const district = document.getElementById('district').value;
+            
+            // Corrigir nomes de municípios sem espaços
+            let correctedMunicipality = municipality;
+            if (municipality === 'KilambaKiaxi') {
+                correctedMunicipality = 'Kilamba Kiaxi';
+            }
+            
             const payload = {
                 level: level,
                 province: province,
-                municipality: level === 'municipality' || level === 'district' ? municipality : 'all',
-                floodRate: parseFloat(floodRate)
+                municipality: level === 'municipality' || level === 'district' ? correctedMunicipality : 'all',
+                district: level === 'district' ? district : 'all',
+                floodRate: parseFloat(floodRate),
+                waterLevel: parseFloat(document.getElementById('waterLevel').value)
             };
 
             document.getElementById('resultsContent').innerHTML = '<p class="empty-state">⏳ Executando simulação... Aguarde.</p>';
             document.getElementById('map').style.display = 'block';
             document.getElementById('statsContainer').style.display = 'none';
 
-            fetch('http://localhost:5000/api/simulate', {
+            fetch('/api/simulate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -430,7 +492,7 @@
             document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
 
             const mapContainer = document.getElementById('map');
-            
+
             if (data.geojson) {
                 mapContainer.style.display = 'block';
                 if (map) map.remove();
@@ -446,15 +508,35 @@
                 const geoJsonData = JSON.parse(data.geojson);
                 const geoJsonLayer = L.geoJSON(geoJsonData, {
                     style: getMapStyle,
+                    pointToLayer: function(feature, latlng) {
+                        // Para pontos (distritos), criar marcadores circulares
+                        const isFlooded = feature.properties.flooded;
+                        const waterLevel = feature.properties.waterLevel || 0;
+                        const color = isFlooded ? getColorByWaterLevel(waterLevel) : 'var(--map-normal)';
+                        
+                        return L.circleMarker(latlng, {
+                            radius: 8,
+                            fillColor: color,
+                            color: 'var(--map-border)',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        });
+                    },
                     onEachFeature: function(feature, layer) {
                         const floodedStatus = feature.properties.flooded 
                             ? `<span style="color: var(--danger); font-weight: bold;">Sim (Risco Alto)</span>` 
                             : `<span style="color: var(--success);">Não</span>`;
 
+                        const municipalityInfo = feature.properties.municipality 
+                            ? `<p style="margin: 3px 0;"><strong>Município:</strong> ${feature.properties.municipality}</p>` 
+                            : '';
+
                         const popupContent = `
                             <div style="font-family: 'Poppins', sans-serif;">
                                 <h4 style="margin: 0 0 5px; color: var(--primary);">${feature.properties.name}</h4>
                                 <hr style="margin: 5px 0; border-top: 1px solid #eee;">
+                                ${municipalityInfo}
                                 <p style="margin: 3px 0;"><strong>Inundada:</strong> ${floodedStatus}</p>
                                 <p style="margin: 3px 0;"><strong>Nível de Água:</strong> ${feature.properties.waterLevel.toFixed(2)} m</p>
                                 <p style="margin: 3px 0;"><strong>População Afetada:</strong> ${formatNumber(feature.properties.affectedPopulation)}</p>
@@ -465,7 +547,9 @@
                          // Efeito de destaque ao passar o mouse
                         layer.on({
                             mouseover: (e) => {
-                                e.target.setStyle({ weight: 2, color: 'black', fillOpacity: 0.9 });
+                                if (e.target.setStyle) {
+                                    e.target.setStyle({ weight: 3, radius: 10 });
+                                }
                             },
                             mouseout: (e) => {
                                 geoJsonLayer.resetStyle(e.target);
@@ -474,8 +558,18 @@
                     }
                 }).addTo(map);
 
-                map.fitBounds(geoJsonLayer.getBounds(), { padding: [20, 20] });
-                
+                try {
+                    const bounds = geoJsonLayer.getBounds();
+                    if (bounds && bounds.isValid()) {
+                        map.fitBounds(bounds, { padding: [20, 20] });
+                    } else {
+                        map.setView([-12.5, 18.5], 6);
+                    }
+                } catch (error) {
+                    console.warn('Não foi possível ajustar os limites do mapa:', error);
+                    map.setView([-12.5, 18.5], 6);
+                }
+
                 // Adiciona Legenda Customizada (Leaflet Control)
                 const legend = L.control({position: 'bottomright'});
 
@@ -522,12 +616,31 @@
         document.getElementById('level').addEventListener('change', function() {
             const level = this.value;
             const municipalityGroup = document.getElementById('municipality-group');
-            municipalityGroup.style.display = (level === 'municipality' || level === 'district') ? 'block' : 'none';
+            const districtGroup = document.getElementById('district-group');
+            
+            if (level === 'province') {
+                municipalityGroup.style.display = 'none';
+                districtGroup.style.display = 'none';
+            } else if (level === 'municipality') {
+                municipalityGroup.style.display = 'block';
+                districtGroup.style.display = 'none';
+            } else if (level === 'district') {
+                municipalityGroup.style.display = 'block';
+                districtGroup.style.display = 'block';
+            }
         });
 
         document.getElementById('province').addEventListener('change', function() {
             const province = this.value;
             loadMunicipalities(province);
+        });
+
+        document.getElementById('municipality').addEventListener('change', function() {
+            const municipality = this.value;
+            const level = document.getElementById('level').value;
+            if (level === 'district') {
+                loadDistricts(municipality);
+            }
         });
 
         window.onload = function() {
