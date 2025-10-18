@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simulador de Inundações - Angola 🇦🇴</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --primary: #0277bd;
@@ -18,353 +18,546 @@
             --shadow: rgba(0, 0, 0, 0.1);
             --danger: #d32f2f;
             --success: #388e3c;
-            --map-normal: #e8e8e8;
-            --map-border: #666;
-            --map-flood-low: #79a6d2;
-            --map-flood-high: #003366;
         }
-        body {
-            font-family: 'Poppins', Arial, sans-serif;
+        
+        * {
             margin: 0;
             padding: 0;
-            background-color: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
+            box-sizing: border-box;
         }
-        header {
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        /* HEADER */
+        .header {
             background: linear-gradient(90deg, var(--primary), var(--primary-light));
             color: white;
-            padding: 20px 30px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 1000;
         }
-        header h1 {
+        
+        .header h1 {
+            font-size: 1.5em;
             margin: 0;
             font-weight: 700;
-            font-size: 1.8em;
         }
-        .main-layout {
+        
+        /* LAYOUT */
+        .main-container {
             display: flex;
-            max-width: 1300px;
-            margin: 20px auto;
-            padding: 0 20px;
-            gap: 20px;
+            height: calc(100vh - 70px);
         }
+        
+        /* SIDEBAR */
         .sidebar {
-            width: 300px;
-            flex-shrink: 0;
+            width: 350px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            z-index: 500;
         }
-        .content {
-            flex-grow: 1;
+        
+        .control-panel {
+            padding: 20px;
         }
-        .form-panel, .results-panel {
-            background: var(--card-bg);
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px var(--shadow);
-            margin-bottom: 20px;
-        }
-        .form-panel h2 {
+        
+        .control-panel h2 {
             color: var(--primary);
-            border-bottom: 3px solid var(--accent);
+            font-size: 1.2em;
+            margin-bottom: 15px;
             padding-bottom: 10px;
-            margin-top: 0;
+            border-bottom: 2px solid var(--accent);
         }
+        
         .form-group {
-            margin-bottom: 18px;
+            margin-bottom: 15px;
         }
+        
         .form-group label {
-            font-weight: 500;
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            color: var(--text);
         }
-        .form-group select, .form-group input[type="number"] {
+        
+        .form-group select,
+        .form-group input {
             width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #ccc;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
             border-radius: 8px;
-            background-color: #f9f9f9;
+            font-size: 0.95em;
+            transition: all 0.3s;
         }
-        .form-group input#waterLevel {
-            border: none;
-            border-bottom: 2px solid var(--primary-light);
-            background-color: #f0f6ff;
-            border-radius: 0;
-            padding: 10px 8px;
-            transition: border-bottom-color 0.3s ease;
-        }
-        .form-group input#waterLevel:focus {
+        
+        .form-group select:focus,
+        .form-group input:focus {
             outline: none;
-            border-bottom-color: var(--primary);
+            border-color: var(--primary);
         }
-        .form-group input#waterLevel::placeholder {
-            color: #888;
-            font-style: italic;
-        }
-        .form-group button {
+        
+        .btn-simulate {
             width: 100%;
-            padding: 12px 25px;
+            padding: 12px;
             background: linear-gradient(135deg, var(--primary), var(--primary-light));
             color: white;
             border: none;
             border-radius: 8px;
-            cursor: pointer;
             font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
         }
+        
+        .btn-simulate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(2, 119, 189, 0.4);
+        }
+        
+        .btn-simulate:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* STATS */
+        .stats-container {
+            padding: 15px 20px;
+            background: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card .value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .stat-card .label {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 3px;
+        }
+        
+        /* MAP CONTAINER */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        
         #map {
-            height: 500px;
-            margin-bottom: 25px;
-            border-radius: 12px;
-            overflow: hidden;
-            display: none;
-            box-shadow: 0 6px 16px var(--shadow);
-            border: 1px solid #ddd;
+            width: 100%;
+            height: 100%;
         }
-        .map-legend {
+        
+        /* MAP CONTROLS */
+        .map-controls {
             position: absolute;
-            bottom: 10px;
+            top: 10px;
             right: 10px;
             z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .map-control-btn {
             background: white;
+            border: none;
             padding: 10px;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-size: 0.9em;
-            border-left: 5px solid var(--primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            cursor: pointer;
+            font-size: 1.2em;
+            transition: all 0.3s;
         }
+        
+        .map-control-btn:hover {
+            background: var(--primary);
+            color: white;
+            transform: scale(1.1);
+        }
+        
+        /* LEGEND */
+        .map-legend {
+            position: absolute;
+            bottom: 20px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 200px;
+        }
+        
+        .map-legend h4 {
+            margin: 0 0 10px 0;
+            color: var(--primary);
+            font-size: 0.95em;
+        }
+        
         .legend-item {
             display: flex;
             align-items: center;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            font-size: 0.85em;
         }
+        
         .legend-color {
-            width: 20px;
-            height: 15px;
-            border: 1px solid var(--map-border);
-            margin-right: 8px;
-            border-radius: 3px;
+            width: 30px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 10px;
+            border: 1px solid #333;
         }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            margin-bottom: 25px;
-        }
-        .stat-card {
-            background: var(--card-bg);
-            padding: 18px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            border-bottom: 4px solid var(--primary);
-        }
-        /* MODIFICAÇÃO: Novo estilo para a seção de resultados */
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-        .result-card {
-            background: #f7f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
-            border-left: 4px solid var(--success);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .result-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-        }
-        .result-card.flooded {
-            border-left-color: var(--danger);
-            background: #fffafa;
-        }
-        .result-card h3 {
-            margin: 0 0 10px;
-            font-size: 1.1em;
-            display: flex;
+        
+        /* LOADING */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            justify-content: center;
             align-items: center;
-            gap: 8px;
+            z-index: 10000;
         }
-        .result-card p {
-            margin: 5px 0;
-            font-size: 0.9em;
+        
+        .loading-overlay.active {
+            display: flex;
         }
-        .result-group {
-            margin-bottom: 20px;
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
-        .result-group h3 {
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* POPUP */
+        .leaflet-popup-content-wrapper {
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        
+        .popup-content {
+            font-family: 'Poppins', sans-serif;
+            min-width: 250px;
+        }
+        
+        .popup-content h3 {
+            margin: 0 0 10px 0;
             color: var(--primary);
-            font-size: 1.2em;
-            margin-bottom: 10px;
+            font-size: 1.1em;
             border-bottom: 2px solid var(--accent);
             padding-bottom: 5px;
         }
-        .empty-state {
-            text-align: center;
-            font-style: italic;
-            color: #777;
-            padding: 40px;
-            border: 1px dashed #ccc;
-            border-radius: 10px;
-            background: #fdfdff;
-        }
-        .error-message {
-            color: var(--danger);
+        
+        .popup-content .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
             font-size: 0.9em;
-            padding: 10px;
-            background: #ffebee;
-            border-radius: 8px;
         }
-        @media (max-width: 900px) {
-            .main-layout {
-                flex-direction: column;
-                padding: 0 15px;
-            }
+        
+        .popup-content .info-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .popup-content .info-value {
+            color: #333;
+        }
+        
+        .popup-content .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+        
+        .status-flooded {
+            background: #ffebee;
+            color: var(--danger);
+        }
+        
+        .status-safe {
+            background: #e8f5e9;
+            color: var(--success);
+        }
+        
+        .error-message {
+            background: #ffebee;
+            color: var(--danger);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9em;
+            display: none;
+        }
+        
+        .error-message.active {
+            display: block;
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
             .sidebar {
-                width: 100%;
+                position: absolute;
+                left: -350px;
+                height: 100%;
+                transition: left 0.3s;
+                z-index: 2000;
             }
-            .results-grid {
-                grid-template-columns: 1fr;
+            
+            .sidebar.active {
+                left: 0;
+            }
+            
+            .mobile-toggle {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                z-index: 1001;
+                background: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                cursor: pointer;
+                font-size: 1.2em;
             }
         }
     </style>
 </head>
 <body>
-    <header>
-        <h1>🌊 Simulador de Impacto de Inundações - Angola 🇦🇴</h1>
-    </header>
-    <div class="main-layout">
+    <div class="header">
+        <h1>🌊 Simulador de Inundações - Angola 🇦🇴</h1>
+    </div>
+    
+    <div class="main-container">
+        <!-- SIDEBAR -->
         <div class="sidebar">
-            <div class="form-panel">
-                <h2>Configurações da Simulação</h2>
+            <div class="control-panel">
+                <h2>⚙️ Configurações</h2>
+                
                 <div class="form-group">
-                    <label for="level">Nível de Análise:</label>
+                    <label>Nível de Análise:</label>
                     <select id="level">
                         <option value="province">Província</option>
                         <option value="municipality">Município</option>
                         <option value="district">Distrito</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
-                    <label for="province">Província:</label>
+                    <label>Província:</label>
                     <select id="province">
                         <option value="all">Todas</option>
                     </select>
                 </div>
+                
                 <div class="form-group" id="municipality-group" style="display: none;">
-                    <label for="municipality">Município:</label>
+                    <label>Município:</label>
                     <select id="municipality">
                         <option value="all">Todos</option>
                     </select>
                 </div>
+                
                 <div class="form-group">
-                    <label for="floodRate">Taxa Crítica de Inundação (%):</label>
+                    <label>Taxa de Inundação (%):</label>
                     <input type="number" id="floodRate" value="50" min="0" max="100">
                 </div>
+                
                 <div class="form-group">
-                    <label for="waterLevel">
-                        Nível de Água (m) <em>(opcional – se informado, a simulação usará esse valor)</em>:
-                    </label>
-                    <input type="number" id="waterLevel" placeholder="Ex.: 12.5" step="0.1" min="0">
+                    <label>Nível de Água (m) <em style="font-size: 0.85em; color: #666;">(opcional)</em>:</label>
+                    <input type="number" id="waterLevel" placeholder="Ex: 10.5" step="0.1" min="0">
                 </div>
+                
                 <div class="form-group">
-                    <button onclick="runSimulation()">🌊 Executar Simulação</button>
+                    <button class="btn-simulate" onclick="runSimulation()">
+                        🌊 Executar Simulação
+                    </button>
                 </div>
-                <div id="errorMessage" class="error-message" style="display: none;"></div>
+                
+                <div class="error-message" id="errorMessage"></div>
             </div>
-        </div>
-        <div class="content">
-            <div class="results-panel">
-                <div id="statsContainer" style="display: none;">
-                    <h2>📊 Estatísticas da Simulação</h2>
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <h3>Áreas Inundadas</h3>
-                            <p id="statFlooded">0</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3>População Afetada</h3>
-                            <p id="statPopulation">0</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3>Total de Áreas</h3>
-                            <p id="statTotal">0</p>
-                        </div>
-                        <div class="stat-card">
-                            <h3>Risco Médio (%)</h3>
-                            <p id="statRisk">0%</p>
-                        </div>
+            
+            <div class="stats-container" id="statsContainer" style="display: none;">
+                <h2 style="margin-bottom: 15px; color: var(--primary); font-size: 1.1em;">📊 Estatísticas</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="value" id="statFlooded">0</div>
+                        <div class="label">Áreas Inundadas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="statPopulation">0</div>
+                        <div class="label">População Afetada</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="statTotal">0</div>
+                        <div class="label">Total Analisado</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="statRisk">0%</div>
+                        <div class="label">Taxa de Risco</div>
                     </div>
                 </div>
-                <h2>Visualização Geoespacial</h2>
-                <div id="map"></div>
-                <h2>📋 Resultados Detalhados</h2>
-                <div id="resultsContent">
-                    <p class="empty-state">Configure e execute uma simulação no painel lateral para visualizar os dados de risco e as áreas afetadas.</p>
+            </div>
+        </div>
+        
+        <!-- MAP CONTAINER -->
+        <div class="map-container">
+            <div id="map"></div>
+            
+            <div class="map-controls">
+                <button class="map-control-btn" onclick="map.zoomIn()" title="Zoom In">+</button>
+                <button class="map-control-btn" onclick="map.zoomOut()" title="Zoom Out">−</button>
+                <button class="map-control-btn" onclick="resetView()" title="Resetar Visão">🏠</button>
+            </div>
+            
+            <div class="map-legend">
+                <h4>📍 Legenda</h4>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgba(66, 165, 245, 0.6);"></div>
+                    <span>Inundação Leve (5-8m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgba(255, 152, 0, 0.7);"></div>
+                    <span>Inundação Moderada (8-15m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgba(244, 67, 54, 0.8);"></div>
+                    <span>Inundação Grave (15-25m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgba(136, 14, 79, 0.9);"></div>
+                    <span>Inundação Crítica (>25m)</span>
+                </div>
+            </div>
+            
+            <div class="loading-overlay" id="loadingOverlay">
+                <div>
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: var(--primary); font-weight: 600;">Processando simulação...</p>
                 </div>
             </div>
         </div>
     </div>
+    
     <script>
         let map = null;
+        let currentLayer = null;
+        const API_URL = 'https://inunda-es-sig.onrender.com';
+        
+        // INICIALIZAR MAPA COM SATELLITE VIEW
+        function initMap() {
+            map = L.map('map').setView([-12.5, 18.5], 6);
+            
+            // OPÇÃO 1: Google Satellite (Melhor qualidade, como Google Earth)
+            L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: '© Google'
+            }).addTo(map);
+            
+            // OPÇÃO 2: Esri Satellite (Alternativa se Google não funcionar)
+            // L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            //     maxZoom: 19,
+            //     attribution: '© Esri'
+            // }).addTo(map);
+            
+            // Adicionar labels de cidades sobre o satélite
+            L.tileLayer('http://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+            }).addTo(map);
+        }
+        
+        function resetView() {
+            map.setView([-12.5, 18.5], 6);
+        }
+        
+        function getFloodColor(waterLevel, severity) {
+            if (waterLevel === 0) return 'rgba(200, 200, 200, 0.3)';
+            
+            if (severity === 'Crítica' || waterLevel > 25) {
+                return 'rgba(136, 14, 79, 0.85)'; // Roxo escuro
+            } else if (severity === 'Grave' || waterLevel > 15) {
+                return 'rgba(244, 67, 54, 0.75)'; // Vermelho
+            } else if (severity === 'Moderada' || waterLevel > 8) {
+                return 'rgba(255, 152, 0, 0.65)'; // Laranja
+            } else {
+                return 'rgba(66, 165, 245, 0.55)'; // Azul claro
+            }
+        }
+        
         function formatNumber(num) {
             return new Intl.NumberFormat('pt-BR').format(num);
         }
-        function getColorByWaterLevel(level) {
-            if (level === 0) return 'var(--map-normal)';
-            const maxLevel = 5;
-            const intensity = Math.min(level / maxLevel, 1);
-            const r_start = 121, g_start = 166, b_start = 210;
-            const r_end = 0, g_end = 51, b_end = 102;
-            const r = Math.round(r_start + (r_end - r_start) * intensity);
-            const g = Math.round(g_start + (g_end - g_start) * intensity);
-            const b = Math.round(b_start + (b_end - b_start) * intensity);
-            return `rgb(${r}, ${g}, ${b})`;
-        }
-        function getMapStyle(feature) {
-            const isFlooded = feature.properties.flooded;
-            const waterLevel = feature.properties.waterLevel || 0;
-            const fillColor = isFlooded ? getColorByWaterLevel(waterLevel) : 'var(--map-normal)';
-            return {
-                fillColor: fillColor,
-                fillOpacity: isFlooded ? 0.8 : 0.6,
-                color: 'var(--map-border)',
-                weight: isFlooded ? 1.0 : 0.8,
-                opacity: 0.8,
-            };
-        }
-        const url = "https://inunda-es-sig.onrender.com"
+        
         function loadProvinces() {
-            fetch(`${url}/api/provinces`)
+            fetch(`${API_URL}/api/provinces`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        const provinceSelect = document.getElementById('province');
-                        provinceSelect.innerHTML = '<option value="all">Todas</option>';
+                        const select = document.getElementById('province');
+                        select.innerHTML = '<option value="all">Todas</option>';
                         data.data.forEach(prov => {
                             const option = document.createElement('option');
                             option.value = prov.name;
                             option.textContent = prov.name;
-                            provinceSelect.appendChild(option);
+                            select.appendChild(option);
                         });
-                    } else {
-                        showError('Erro ao carregar províncias: ' + data.error);
                     }
                 })
-                .catch(error => {
-                    showError('Erro ao conectar com a API (províncias): ' + error.message);
-                });
+                .catch(error => showError('Erro ao carregar províncias: ' + error.message));
         }
+        
         function loadMunicipalities(province) {
             const municipalityGroup = document.getElementById('municipality-group');
             const municipalitySelect = document.getElementById('municipality');
+            
             if (province === 'all') {
                 municipalityGroup.style.display = 'none';
                 municipalitySelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
-
-            fetch(`${url}/api/municipalities?province=${encodeURIComponent(province)}`)
+            
+            fetch(`${API_URL}/api/municipalities?province=${encodeURIComponent(province)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -376,204 +569,162 @@
                             option.textContent = mun.name;
                             municipalitySelect.appendChild(option);
                         });
-                    } else {
-                        showError('Erro ao carregar municípios: ' + data.error);
                     }
                 })
-                .catch(error => {
-                    showError('Erro ao conectar com a API (municípios): ' + error.message);
-                });
+                .catch(error => showError('Erro ao carregar municípios: ' + error.message));
         }
+        
         function showError(message) {
-            const errorMessage = document.getElementById('errorMessage');
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'block';
-            //console.error(message);
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('active');
+            setTimeout(() => errorDiv.classList.remove('active'), 5000);
         }
-        function clearError() {
-            document.getElementById('errorMessage').style.display = 'none';
-        }
+        
         function runSimulation() {
-            clearError();
             const level = document.getElementById('level').value;
             const province = document.getElementById('province').value;
             const municipality = document.getElementById('municipality').value;
             const floodRate = document.getElementById('floodRate').value;
-            const waterLevelInput = document.getElementById('waterLevel').value.trim();
-            if (parseFloat(floodRate) < 0 || parseFloat(floodRate) > 100) {
-                showError('A Taxa de Inundação deve estar entre 0 e 100.');
-                return;
-            }
-            let waterLevel = null;
-            if (waterLevelInput !== '') {
-                const wl = parseFloat(waterLevelInput);
-                if (isNaN(wl) || wl < 0) {
-                    showError('O nível de água deve ser um número maior ou igual a 0.');
-                    return;
-                }
-                waterLevel = wl;
-            }
+            const waterLevel = document.getElementById('waterLevel').value.trim();
+            
             const payload = {
                 level: level,
                 province: province,
                 municipality: (level === 'municipality' || level === 'district') ? municipality : 'all',
                 floodRate: parseFloat(floodRate),
-                waterLevel: waterLevel
+                waterLevel: waterLevel ? parseFloat(waterLevel) : null
             };
-            document.getElementById('resultsContent').innerHTML = '<p class="empty-state">⏳ Executando simulação... Aguarde.</p>';
-            document.getElementById('map').style.display = 'block';
-            document.getElementById('statsContainer').style.display = 'none';
-            fetch(`${url}/api/simulate`, {
+            
+            document.getElementById('loadingOverlay').classList.add('active');
+            
+            fetch(`${API_URL}/api/simulate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             })
                 .then(response => response.json())
                 .then(data => {
+                    document.getElementById('loadingOverlay').classList.remove('active');
+                    
                     if (data.success) {
                         displayResults(data);
                     } else {
                         showError('Erro na simulação: ' + data.error);
-                        document.getElementById('resultsContent').innerHTML = '<p class="empty-state">❌ Simulação falhou. Verifique o console.</p>';
                     }
                 })
                 .catch(error => {
+                    document.getElementById('loadingOverlay').classList.remove('active');
                     showError('Erro ao executar simulação: ' + error.message);
-                    document.getElementById('resultsContent').innerHTML = '<p class="empty-state">❌ Simulação falhou. Verifique o console.</p>';
                 });
         }
+        
         function displayResults(data) {
+            // Atualizar estatísticas
             document.getElementById('statsContainer').style.display = 'block';
             document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
             document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
             document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
             document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
-            const mapContainer = document.getElementById('map');
-            if (data.geojson) {
-                mapContainer.style.display = 'block';
-                if (map) map.remove();
-                map = L.map('map').setView([-12.5, 18.5], 5);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                    attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, CartoDB',
-                    maxZoom: 18,
-                }).addTo(map);
-                const geoJsonData = JSON.parse(data.geojson);
-                const geoJsonLayer = L.geoJSON(geoJsonData, {
-                    style: getMapStyle,
-                    onEachFeature: function(feature, layer) {
-                        const floodedStatus = feature.properties.flooded
-                            ? `<span style="color: var(--danger); font-weight: bold;">Sim (Risco Alto)</span>`
-                            : `<span style="color: var(--success);">Não</span>`;
-                        const popupContent = `
-                            <div style="font-family: 'Poppins', sans-serif;">
-                                <h4 style="margin: 0 0 5px; color: var(--primary);">${feature.properties.name}</h4>
-                                <hr style="margin: 5px 0; border-top: 1px solid #eee;">
-                                <p style="margin: 3px 0;"><strong>Inundada:</strong> ${floodedStatus}</p>
-                                <p style="margin: 3px 0;"><strong>Nível de Água:</strong> ${feature.properties.waterLevel.toFixed(2)} m</p>
-                                <p style="margin: 3px 0;"><strong>População Afetada:</strong> ${formatNumber(feature.properties.affectedPopulation)}</p>
-                            </div>
-                        `;
-                        layer.bindPopup(popupContent);
-                        layer.on({
-                            mouseover: (e) => {
-                                e.target.setStyle({ weight: 2, color: 'black', fillOpacity: 0.9 });
-                            },
-                            mouseout: (e) => {
-                                geoJsonLayer.resetStyle(e.target);
-                            }
-                        });
-                    }
-                }).addTo(map);
-                map.fitBounds(geoJsonLayer.getBounds(), { padding: [20, 20] });
-                const legend = L.control({position: 'bottomright'});
-                legend.onAdd = function (map) {
-                    const div = L.DomUtil.create('div', 'map-legend');
-                    div.innerHTML += '<h4>Legenda do Risco</h4>';
-                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-normal); border-color: var(--map-border);"></span> Não Inundada</div>';
-                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-flood-low); border-color: var(--map-border);"></span> Baixa Severidade</div>';
-                    div.innerHTML += '<div class="legend-item"><span class="legend-color" style="background: var(--map-flood-high); border-color: var(--map-border);"></span> Alta Severidade</div>';
-                    return div;
-                };
-                map.eachLayer(function (layer) {
-                    if (layer.options && layer.options.position === 'bottomright') {
-                        map.removeControl(layer);
-                    }
-                });
-                legend.addTo(map);
-            } else {
-                mapContainer.style.display = 'none';
+            
+            // Remover camada anterior
+            if (currentLayer) {
+                map.removeLayer(currentLayer);
             }
-            // MODIFICAÇÃO: Nova estrutura de resultados com agrupamento
-            let html = '';
-            if (data.parameters.level === 'municipality' && data.parameters.province !== 'all') {
-                html += `<div class="result-group"><h3>Resultados para ${data.parameters.province}</h3><div class="results-grid">`;
-                data.data.forEach(item => {
-                    const icon = item.flooded ? '🚨' : '✅';
-                    html += `
-                        <div class="result-card ${item.flooded ? 'flooded' : ''}">
-                            <h3>${icon} ${item.name}</h3>
-                            <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
-                            <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
-                            <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
-                            <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
-                        </div>
-                    `;
-                });
-                html += '</div></div>';
-            } else if (data.parameters.level === 'district' && data.parameters.municipality !== 'all') {
-                html += `<div class="result-group"><h3>Resultados para ${data.parameters.municipality} (${data.parameters.province})</h3><div class="results-grid">`;
-                data.data.forEach(item => {
-                    const icon = item.flooded ? '🚨' : '✅';
-                    html += `
-                        <div class="result-card ${item.flooded ? 'flooded' : ''}">
-                            <h3>${icon} ${item.name}</h3>
-                            <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
-                            <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
-                            <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
-                            <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
-                        </div>
-                    `;
-                });
-                html += '</div></div>';
-            } else {
-                // Agrupar por província para nível 'province' ou quando province='all'
-                const groupedData = {};
-                data.data.forEach(item => {
-                    const province = item.province || 'Outros';
-                    if (!groupedData[province]) {
-                        groupedData[province] = [];
-                    }
-                    groupedData[province].push(item);
-                });
-                Object.keys(groupedData).sort().forEach(province => {
-                    html += `<div class="result-group"><h3>${province}</h3><div class="results-grid">`;
-                    groupedData[province].forEach(item => {
-                        const icon = item.flooded ? '🚨' : '✅';
-                        html += `
-                            <div class="result-card ${item.flooded ? 'flooded' : ''}">
-                                <h3>${icon} ${item.name}</h3>
-                                <p><strong>Status:</strong> ${item.flooded ? '<span style="color: var(--danger);">Inundada</span>' : '<span style="color: var(--success);">Segura</span>'}</p>
-                                <p><strong>Nível de Água:</strong> ${item.waterLevel.toFixed(2)} m</p>
-                                <p><strong>População Afetada:</strong> ${formatNumber(item.affectedPopulation)}</p>
-                                <p><strong>Dias de Recuperação:</strong> ${item.recoveryDays} dias</p>
+            
+            // Adicionar nova camada GeoJSON
+            const geoJsonData = JSON.parse(data.geojson);
+            
+            currentLayer = L.geoJSON(geoJsonData, {
+                style: function(feature) {
+                    const props = feature.properties;
+                    return {
+                        fillColor: getFloodColor(props.waterLevel, props.severity),
+                        fillOpacity: props.flooded ? 0.7 : 0.3,
+                        color: props.flooded ? '#FF5722' : '#666',
+                        weight: props.flooded ? 2.5 : 1,
+                        opacity: 1
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    const props = feature.properties;
+                    
+                    const popupContent = `
+                        <div class="popup-content">
+                            <h3>${props.name}</h3>
+                            <div class="info-row">
+                                <span class="info-label">Status:</span>
+                                <span class="status-badge ${props.flooded ? 'status-flooded' : 'status-safe'}">
+                                    ${props.flooded ? '🚨 INUNDADA' : '✅ SEGURA'}
+                                </span>
                             </div>
-                        `;
+                            <div class="info-row">
+                                <span class="info-label">Nível de Água:</span>
+                                <span class="info-value">${props.waterLevel.toFixed(2)}m</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Severidade:</span>
+                                <span class="info-value">${props.severity}</span>
+                            </div>
+                            ${props.elevation ? `
+                            <div class="info-row">
+                                <span class="info-label">Elevação:</span>
+                                <span class="info-value">${props.elevation.toFixed(0)}m</span>
+                            </div>
+                            ` : ''}
+                            ${props.elevation_min && props.elevation_max ? `
+                            <div class="info-row">
+                                <span class="info-label">Variação:</span>
+                                <span class="info-value">${props.elevation_min.toFixed(0)}m - ${props.elevation_max.toFixed(0)}m</span>
+                            </div>
+                            ` : ''}
+                            <div class="info-row">
+                                <span class="info-label">População Afetada:</span>
+                                <span class="info-value">${formatNumber(props.affectedPopulation)}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Recuperação:</span>
+                                <span class="info-value">${props.recoveryDays} dias</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    layer.bindPopup(popupContent);
+                    
+                    // Hover effects
+                    layer.on({
+                        mouseover: function(e) {
+                            e.target.setStyle({
+                                weight: 3,
+                                color: '#FFF',
+                                fillOpacity: 0.9
+                            });
+                        },
+                        mouseout: function(e) {
+                            currentLayer.resetStyle(e.target);
+                        }
                     });
-                    html += '</div></div>';
-                });
-            }
-            document.getElementById('resultsContent').innerHTML = html;
+                }
+            }).addTo(map);
+            
+            // Ajustar zoom para mostrar todas as áreas
+            map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
         }
+        
+        // Event listeners
         document.getElementById('level').addEventListener('change', function() {
             const level = this.value;
             const municipalityGroup = document.getElementById('municipality-group');
             municipalityGroup.style.display = (level === 'municipality' || level === 'district') ? 'block' : 'none';
         });
+        
         document.getElementById('province').addEventListener('change', function() {
-            const province = this.value;
-            loadMunicipalities(province);
+            loadMunicipalities(this.value);
         });
+        
+        // Inicializar
         window.onload = function() {
+            initMap();
             loadProvinces();
         };
     </script>
