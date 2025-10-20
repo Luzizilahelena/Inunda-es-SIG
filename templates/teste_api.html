@@ -379,7 +379,7 @@
                     <select id="level">
                         <option value="province">Província</option>
                         <option value="municipality">Município</option>
-                        <option value="district">Distrito</option>
+                        <option value="district">Distrito/Bairro</option>
                     </select>
                 </div>
                 
@@ -393,6 +393,13 @@
                 <div class="form-group" id="municipality-group" style="display: none;">
                     <label>Município:</label>
                     <select id="municipality">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="district-group" style="display: none;">
+                    <label>Distrito/Bairro:</label>
+                    <select id="district">
                         <option value="all">Todos</option>
                     </select>
                 </div>
@@ -483,24 +490,15 @@
         let currentLayer = null;
         const API_URL = 'https://inunda-es-sig.onrender.com';
         
-        // INICIALIZAR MAPA COM SATELLITE VIEW
         function initMap() {
             map = L.map('map').setView([-12.5, 18.5], 6);
             
-            // OPÇÃO 1: Google Satellite (Melhor qualidade, como Google Earth)
             L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
                 attribution: '© Google'
             }).addTo(map);
             
-            // OPÇÃO 2: Esri Satellite (Alternativa se Google não funcionar)
-            // L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            //     maxZoom: 19,
-            //     attribution: '© Esri'
-            // }).addTo(map);
-            
-            // Adicionar labels de cidades sobre o satélite
             L.tileLayer('http://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
                 maxZoom: 20,
                 subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
@@ -515,13 +513,13 @@
             if (waterLevel === 0) return 'rgba(200, 200, 200, 0.3)';
             
             if (severity === 'Crítica' || waterLevel > 25) {
-                return 'rgba(136, 14, 79, 0.85)'; // Roxo escuro
+                return 'rgba(136, 14, 79, 0.85)';
             } else if (severity === 'Grave' || waterLevel > 15) {
-                return 'rgba(244, 67, 54, 0.75)'; // Vermelho
+                return 'rgba(244, 67, 54, 0.75)';
             } else if (severity === 'Moderada' || waterLevel > 8) {
-                return 'rgba(255, 152, 0, 0.65)'; // Laranja
+                return 'rgba(255, 152, 0, 0.65)';
             } else {
-                return 'rgba(66, 165, 245, 0.55)'; // Azul claro
+                return 'rgba(66, 165, 245, 0.55)';
             }
         }
         
@@ -550,9 +548,11 @@
         function loadMunicipalities(province) {
             const municipalityGroup = document.getElementById('municipality-group');
             const municipalitySelect = document.getElementById('municipality');
+            const districtGroup = document.getElementById('district-group');
             
             if (province === 'all') {
                 municipalityGroup.style.display = 'none';
+                districtGroup.style.display = 'none';
                 municipalitySelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
@@ -574,6 +574,35 @@
                 .catch(error => showError('Erro ao carregar municípios: ' + error.message));
         }
         
+        function loadDistricts(municipality) {
+            const districtGroup = document.getElementById('district-group');
+            const districtSelect = document.getElementById('district');
+            
+            if (municipality === 'all') {
+                districtGroup.style.display = 'none';
+                districtSelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+            
+            const province = document.getElementById('province').value;
+            
+            fetch(`${API_URL}/api/districts?province=${encodeURIComponent(province)}&municipality=${encodeURIComponent(municipality)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        districtGroup.style.display = 'block';
+                        districtSelect.innerHTML = '<option value="all">Todos</option>';
+                        data.data.forEach(dist => {
+                            const option = document.createElement('option');
+                            option.value = dist.name;
+                            option.textContent = dist.name;
+                            districtSelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => showError('Erro ao carregar distritos: ' + error.message));
+        }
+        
         function showError(message) {
             const errorDiv = document.getElementById('errorMessage');
             errorDiv.textContent = message;
@@ -585,6 +614,7 @@
             const level = document.getElementById('level').value;
             const province = document.getElementById('province').value;
             const municipality = document.getElementById('municipality').value;
+            const district = document.getElementById('district').value;
             const floodRate = document.getElementById('floodRate').value;
             const waterLevel = document.getElementById('waterLevel').value.trim();
             
@@ -592,6 +622,7 @@
                 level: level,
                 province: province,
                 municipality: (level === 'municipality' || level === 'district') ? municipality : 'all',
+                district: level === 'district' ? district : 'all',
                 floodRate: parseFloat(floodRate),
                 waterLevel: waterLevel ? parseFloat(waterLevel) : null
             };
@@ -620,19 +651,16 @@
         }
         
         function displayResults(data) {
-            // Atualizar estatísticas
             document.getElementById('statsContainer').style.display = 'block';
             document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
             document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
             document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
             document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
             
-            // Remover camada anterior
             if (currentLayer) {
                 map.removeLayer(currentLayer);
             }
             
-            // Adicionar nova camada GeoJSON
             const geoJsonData = JSON.parse(data.geojson);
             
             currentLayer = L.geoJSON(geoJsonData, {
@@ -691,7 +719,6 @@
                     
                     layer.bindPopup(popupContent);
                     
-                    // Hover effects
                     layer.on({
                         mouseover: function(e) {
                             e.target.setStyle({
@@ -707,22 +734,34 @@
                 }
             }).addTo(map);
             
-            // Ajustar zoom para mostrar todas as áreas
             map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
         }
         
-        // Event listeners
         document.getElementById('level').addEventListener('change', function() {
             const level = this.value;
             const municipalityGroup = document.getElementById('municipality-group');
-            municipalityGroup.style.display = (level === 'municipality' || level === 'district') ? 'block' : 'none';
+            const districtGroup = document.getElementById('district-group');
+            
+            if (level === 'province') {
+                municipalityGroup.style.display = 'none';
+                districtGroup.style.display = 'none';
+            } else if (level === 'municipality') {
+                municipalityGroup.style.display = 'block';
+                districtGroup.style.display = 'none';
+            } else if (level === 'district') {
+                municipalityGroup.style.display = 'block';
+                districtGroup.style.display = 'block';
+            }
         });
         
         document.getElementById('province').addEventListener('change', function() {
             loadMunicipalities(this.value);
         });
         
-        // Inicializar
+        document.getElementById('municipality').addEventListener('change', function() {
+            loadDistricts(this.value);
+        });
+        
         window.onload = function() {
             initMap();
             loadProvinces();
