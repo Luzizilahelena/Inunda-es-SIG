@@ -39,7 +39,7 @@ MUNICIPALITIES = {
 }
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
 BAIRROS = {
-    'Kilamba Kiaxi': [
+    'KilambaKiaxi': [
         {'id': 19, 'name': 'Golfe', 'population': 300000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 20, 'name': 'Palanca', 'population': 280000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 21, 'name': 'Kilamba', 'population': 450000, 'type': 'Residencial', 'risk': 'Médio'},
@@ -166,26 +166,26 @@ def get_elevation_batch(coordinates):
         locations = '|'.join([f"{lat},{lon}" for lat, lon in coordinates])
         url = f"https://api.open-elevation.com/api/v1/lookup?locations={locations}"
        
-        logger.info(f"🗻 Buscando elevação para {len(coordinates)} pontos...")
+        logger.info(f"Buscando elevação para {len(coordinates)} pontos...")
         response = requests.get(url, timeout=30)
        
         if response.status_code == 200:
             data = response.json()
             elevations = [result['elevation'] for result in data['results']]
-            logger.info(f"✅ Elevações obtidas: {len(elevations)} pontos")
+            logger.info(f"Elevações obtidas: {len(elevations)} pontos")
             return elevations
         else:
-            logger.warning(f"⚠️ Erro ao obter elevações: Status {response.status_code}")
+            logger.warning(f"Erro ao obter elevações: Status {response.status_code}")
             return None
     except Exception as e:
-        logger.error(f"❌ Erro ao obter elevações: {e}")
+        logger.error(f"Erro ao obter elevações: {e}")
         return None
 def get_region_elevation_stats(geometry):
     """Calcula estatísticas de elevação para uma região"""
     try:
         cache_key = f"{geometry.centroid.y:.4f},{geometry.centroid.x:.4f}"
         if cache_key in ELEVATION_CACHE:
-            logger.info(f"📦 Usando elevação do cache")
+            logger.info(f"Usando elevação do cache")
             return ELEVATION_CACHE[cache_key]
        
         bounds = geometry.bounds
@@ -240,10 +240,10 @@ def get_region_elevation_stats(geometry):
                
                 ELEVATION_CACHE[cache_key] = result
                
-                logger.info(f"🗻 Elevação - Média: {avg:.1f}m, Min: {min_elev:.1f}m, Max: {max_elev:.1f}m")
+                logger.info(f"Elevação - Média: {avg:.1f}m, Min: {min_elev:.1f}m, Max: {max_elev:.1f}m")
                 return result
        
-        logger.warning(f"⚠️ Usando elevação estimada (fallback)")
+        logger.warning(f"Usando elevação estimada (fallback)")
         result = {
             'avg': 400.0,
             'min': 200.0,
@@ -255,7 +255,7 @@ def get_region_elevation_stats(geometry):
         return result
        
     except Exception as e:
-        logger.error(f"❌ Erro ao calcular elevação: {e}")
+        logger.error(f"Erro ao calcular elevação: {e}")
         return {
             'avg': 400.0,
             'min': 200.0,
@@ -268,11 +268,11 @@ def download_and_read_gadm_json(country_code, level):
     cache_key = f"{country_code}_{level}"
    
     if cache_key in GADM_CACHE:
-        logger.info(f"📦 Usando dados GADM do cache: Level {level}")
+        logger.info(f"Usando dados GADM do cache: Level {level}")
         return GADM_CACHE[cache_key]
    
     json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
-    logger.info(f"⬇️ Baixando GeoJSON: {json_url}...")
+    logger.info(f"⬇Baixando GeoJSON: {json_url}...")
    
     try:
         response = requests.get(json_url, timeout=60)
@@ -284,11 +284,11 @@ def download_and_read_gadm_json(country_code, level):
                 gdf = gpd.read_file(json_file, driver='GeoJSON')
        
         GADM_CACHE[cache_key] = gdf
-        logger.info(f"✅ Dados GADM Level {level} armazenados em cache ({len(gdf)} features)")
+        logger.info(f"Dados GADM Level {level} armazenados em cache ({len(gdf)} features)")
         return gdf
        
     except Exception as e:
-        logger.error(f"❌ Erro ao baixar/processar GeoJSON: {e}")
+        logger.error(f"Erro ao baixar/processar GeoJSON: {e}")
         return None
 def normalize_name(name):
     """Normaliza nomes para comparação"""
@@ -525,7 +525,7 @@ def get_bairros():
     municipality = request.args.get('municipality', None)
     province = request.args.get('province', None)
    
-    logger.info(f"🏘️ Listando BAIRROS - Município: {municipality}, Província: {province}")
+    logger.info(f"Listando BAIRROS - Município: {municipality}, Província: {province}")
    
     if not municipality or municipality == 'all':
         # Retornar todos os bairros de Luanda
@@ -551,7 +551,7 @@ def get_bairros():
             break
    
     if not matching_key:
-        logger.warning(f"⚠️ Nenhum bairro encontrado para município: {municipality}")
+        logger.warning(f"Nenhum bairro encontrado para município: {municipality}")
         return jsonify({
             'success': True,
             'data': [],
@@ -580,7 +580,7 @@ def get_bairros():
             bairro_data['province'] = province
         bairros_with_municipality.append(bairro_data)
    
-    logger.info(f"✅ Encontrados {len(bairros_with_municipality)} bairros em {municipality}")
+    logger.info(f"Encontrados {len(bairros_with_municipality)} bairros em {municipality}")
    
     return jsonify({
         'success': True,
@@ -639,11 +639,11 @@ def simulate_flood():
         municipality = data.get('municipality', 'all')
         bairro = data.get('bairro', 'all')
        
-        logger.info(f"🌊 Simulação - Level: {level}, Province: {province}, Municipality: {municipality}, Bairro: {bairro}")
+        logger.info(f"Simulação - Level: {level}, Province: {province}, Municipality: {municipality}, Bairro: {bairro}")
        
         # ========== SIMULAÇÃO DE BAIRROS ==========
         if level == 'bairro':
-            logger.info(f"🏘️ SIMULAÇÃO DE BAIRROS INICIADA")
+            logger.info(f"SIMULAÇÃO DE BAIRROS INICIADA")
            
             if municipality == 'all' or not municipality:
                 return jsonify({
@@ -676,7 +676,7 @@ def simulate_flood():
                         'error': f'Bairro {bairro} não encontrado em {municipality}'
                     }), 404
            
-            logger.info(f"✅ Processando {len(bairros_list)} bairros de {municipality}")
+            logger.info(f"Processando {len(bairros_list)} bairros de {municipality}")
            
             # Buscar geometria do município para usar como referência
             gdf_level2 = download_and_read_gadm_json('AGO', 2)
@@ -690,7 +690,7 @@ def simulate_flood():
                 pop = bairro_data['population']
                 bairro_name = bairro_data['name']
                
-                logger.info(f"🏘️ Processando bairro: {bairro_name}")
+                logger.info(f"Processando bairro: {bairro_name}")
                
                 # Buscar geometria no GADM Level 3 (comunas)
                 found_geom = None
@@ -710,19 +710,19 @@ def simulate_flood():
                         if commune_normalized == bairro_normalized or bairro_normalized in commune_normalized:
                             found_geom = row['geometry']
                             elevation_stats = get_region_elevation_stats(found_geom)
-                            logger.info(f"✅ Geometria encontrada para {bairro_name} - Elevação: {elevation_stats['avg']:.1f}m")
+                            logger.info(f"Geometria encontrada para {bairro_name} - Elevação: {elevation_stats['avg']:.1f}m")
                             break
                
                 # Se não encontrou no Level 3, usar geometria do município
                 if found_geom is None and gdf_level2 is not None:
-                    logger.warning(f"⚠️ Geometria específica não encontrada para {bairro_name}, usando município")
+                    logger.warning(f"Geometria específica não encontrada para {bairro_name}, usando município")
                     municipality_normalized = normalize_name(municipality)
                    
                     for idx, row in gdf_level2.iterrows():
                         if normalize_name(row['NAME_2']) == municipality_normalized:
                             found_geom = row['geometry']
                             elevation_stats = get_region_elevation_stats(found_geom)
-                            logger.info(f"📍 Usando geometria do município - Elevação: {elevation_stats['avg']:.1f}m")
+                            logger.info(f"Usando geometria do município - Elevação: {elevation_stats['avg']:.1f}m")
                             break
                
                 # Calcular inundação com elevação
@@ -815,7 +815,7 @@ def simulate_flood():
                 'timestamp': datetime.now().isoformat()
             }
            
-            logger.info(f"✅ Simulação de bairros concluída - {flooded_count} de {len(results)} bairros inundados")
+            logger.info(f"Simulação de bairros concluída - {flooded_count} de {len(results)} bairros inundados")
             return jsonify(response)
        
         # ========== SIMULAÇÃO DE PROVÍNCIAS E MUNICÍPIOS ==========
@@ -846,7 +846,7 @@ def simulate_flood():
         gdf['affectedPopulation'] = 0
         gdf['elevation'] = 0.0
        
-        logger.info(f"🔄 Processando {len(gdf)} regiões...")
+        logger.info(f"Processando {len(gdf)} regiões...")
        
         for i, row in gdf.iterrows():
             prov = row['NAME_1']
@@ -917,11 +917,11 @@ def simulate_flood():
             'timestamp': datetime.now().isoformat()
         }
        
-        logger.info(f"✅ Simulação concluída - {flooded_count} de {len(results)} áreas inundadas")
+        logger.info(f"Simulação concluída - {flooded_count} de {len(results)} áreas inundadas")
         return jsonify(response)
        
     except Exception as e:
-        logger.error(f"❌ Erro na simulação: {str(e)}")
+        logger.error(f"Erro na simulação: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -933,16 +933,16 @@ def internal_error(error):
     return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
 if __name__ == '__main__':
     print("\n" + "="*70)
-    print("🌊 API de Simulação de Inundações - Angola v3.1")
-    print("🏘️ COM SISTEMA DE BAIRROS CORRIGIDO")
+    print("API de Simulação de Inundações - Angola v3.1")
+    print("COM SISTEMA DE BAIRROS CORRIGIDO")
     print("="*70)
-    print(f"📡 Servidor: http://0.0.0.0:5000")
-    print(f"📚 Docs: http://localhost:5000/api/info")
-    print(f"💚 Status: http://localhost:5000/api/health")
-    print(f"🏘️ Bairros: http://localhost:5000/api/bairros?municipality=Kilamba%20Kiaxi")
-    print(f"📊 Províncias: {len(PROVINCES)}")
-    print(f"🏛️ Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
-    print(f"🏘️ Bairros: {sum(len(b) for b in BAIRROS.values())}")
+    print(f"Servidor: http://0.0.0.0:5000")
+    print(f"Docs: http://localhost:5000/api/info")
+    print(f"Status: http://localhost:5000/api/health")
+    print(f"Bairros: http://localhost:5000/api/bairros?municipality=Kilamba%20Kiaxi")
+    print(f"Províncias: {len(PROVINCES)}")
+    print(f"Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
+    print(f"Bairros: {sum(len(b) for b in BAIRROS.values())}")
     print("="*70 + "\n")
    
     app.run(debug=True, host='0.0.0.0', port=5000)
