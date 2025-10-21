@@ -39,13 +39,12 @@ MUNICIPALITIES = {
 }
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
 BAIRROS = {
-    'KilambaKiaxi': [
+    'Kilamba  Kiaxi': [
         {'id': 19, 'name': 'Golfe', 'population': 300000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 20, 'name': 'Palanca', 'population': 280000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 21, 'name': 'Kilamba', 'population': 450000, 'type': 'Residencial', 'risk': 'Médio'},
         {'id': 22, 'name': 'Camama', 'population': 320000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 100, 'name': 'Sapu', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto'},
-        # Adições novas para Kilamba Kiaxi (de pesquisa: Nova Vida, Bairro Popular, etc.)
         {'id': 101, 'name': 'Nova Vida', 'population': 200000, 'type': 'Residencial', 'risk': 'Médio'},
         {'id': 102, 'name': 'Bairro Popular', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 103, 'name': 'Benfica', 'population': 180000, 'type': 'Residencial', 'risk': 'Médio'},
@@ -87,7 +86,6 @@ BAIRROS = {
         {'id': 28, 'name': 'Benfica', 'population': 140000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 29, 'name': 'Ramiros', 'population': 95000, 'type': 'Residencial', 'risk': 'Baixo'}
     ],
-    # Adições novas: Bairros para Maianga (pesquisados: Alvalade, Cassenda, etc.)
     'Maianga': [
         {'id': 200, 'name': 'Alvalade', 'population': 120000, 'type': 'Residencial', 'risk': 'Médio'},
         {'id': 201, 'name': 'Bairro Popular', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto'},
@@ -100,7 +98,6 @@ BAIRROS = {
         {'id': 208, 'name': 'Catinton', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 209, 'name': 'Calemba', 'population': 70000, 'type': 'Residencial', 'risk': 'Baixo'}
     ],
-    # Bairros para Rangel (pesquisados: Terra Nova, Precol, etc.)
     'Rangel': [
         {'id': 300, 'name': 'Terra Nova', 'population': 100000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 301, 'name': 'Precol', 'population': 80000, 'type': 'Residencial', 'risk': 'Muito Alto'},
@@ -113,7 +110,6 @@ BAIRROS = {
         {'id': 308, 'name': 'Lixeira', 'population': 95000, 'type': 'Residencial', 'risk': 'Muito Alto'},
         {'id': 309, 'name': 'S. Pedro', 'population': 85000, 'type': 'Residencial', 'risk': 'Médio'}
     ],
-    # Bairros para Ingombota (pesquisados: Azul, Boa Vista, etc.)
     'Ingombota': [
         {'id': 400, 'name': 'Azul', 'population': 80000, 'type': 'Residencial', 'risk': 'Médio'},
         {'id': 401, 'name': 'Boa Vista', 'population': 60000, 'type': 'Residencial', 'risk': 'Baixo'},
@@ -126,7 +122,6 @@ BAIRROS = {
         {'id': 408, 'name': 'Cruzeiro', 'population': 85000, 'type': 'Comercial', 'risk': 'Médio'},
         {'id': 409, 'name': 'Patrice Lumumba', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto'}
     ],
-    # Bairros para Samba (pesquisados: Rocha Pinto, Prenda, etc.)
     'Samba': [
         {'id': 500, 'name': 'Rocha Pinto', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 501, 'name': 'Prenda', 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto'},
@@ -139,7 +134,6 @@ BAIRROS = {
         {'id': 508, 'name': 'Coreia', 'population': 95000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 509, 'name': 'Cassenda', 'population': 110000, 'type': 'Residencial', 'risk': 'Médio'}
     ],
-    # Bairros para Sambizanga (pesquisados: Bairro Operário, Ngola Kiluanje, etc.)
     'Sambizanga': [
         {'id': 600, 'name': 'Bairro Operário', 'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto'},
         {'id': 601, 'name': 'Ngola Kiluanje', 'population': 120000, 'type': 'Residencial', 'risk': 'Alto'},
@@ -619,6 +613,8 @@ def get_elevation():
             'success': False,
             'error': str(e)
         }), 400
+# CORREÇÃO: Substitua a rota /api/simulate no seu app.py
+
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
     try:
@@ -667,7 +663,7 @@ def simulate_flood():
            
             bairros_list = BAIRROS.get(matching_key, [])
            
-            # Filtrar bairro específico se foi selecionado
+            # *** CORREÇÃO AQUI: Filtrar bairro específico ***
             if bairro and bairro != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro]
                 if not bairros_list:
@@ -675,8 +671,9 @@ def simulate_flood():
                         'success': False,
                         'error': f'Bairro {bairro} não encontrado em {municipality}'
                     }), 404
-           
-            logger.info(f"Processando {len(bairros_list)} bairros de {municipality}")
+                logger.info(f"Simulando APENAS o bairro: {bairro}")
+            else:
+                logger.info(f"Simulando TODOS os {len(bairros_list)} bairros de {municipality}")
            
             # Buscar geometria do município para usar como referência
             gdf_level2 = download_and_read_gadm_json('AGO', 2)
@@ -818,7 +815,7 @@ def simulate_flood():
             logger.info(f"Simulação de bairros concluída - {flooded_count} de {len(results)} bairros inundados")
             return jsonify(response)
        
-        # ========== SIMULAÇÃO DE PROVÍNCIAS E MUNICÍPIOS ==========
+        # ========== SIMULAÇÃO DE PROVÍNCIAS E MUNICÍPIOS (mantém igual) ==========
         level_map = {'province': 1, 'municipality': 2}
         level_num = level_map.get(level)
        
@@ -865,7 +862,7 @@ def simulate_flood():
                 risk = static['risk']
                 pop = static['population']
             else:
-                continue  # Pula se não existir em static
+                continue
            
             is_flooded, water_level_calc, severity, recovery_days = calculate_flood_risk(
                 risk,
