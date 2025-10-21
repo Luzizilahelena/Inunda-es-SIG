@@ -29,6 +29,7 @@
             overflow: hidden;
             height: 100vh;
         }
+        /* HEADER */
         .header {
             background: linear-gradient(90deg, var(--primary), var(--primary-light));
             color: white;
@@ -42,10 +43,12 @@
             margin: 0;
             font-weight: 700;
         }
+        /* LAYOUT */
         .main-container {
             display: flex;
             height: calc(100vh - 70px);
         }
+        /* SIDEBAR */
         .sidebar {
             width: 350px;
             background: white;
@@ -108,6 +111,7 @@
             cursor: not-allowed;
             transform: none;
         }
+        /* STATS */
         .stats-container {
             padding: 15px 20px;
             background: #f5f5f5;
@@ -135,6 +139,7 @@
             color: #666;
             margin-top: 3px;
         }
+        /* MAP CONTAINER */
         .map-container {
             flex: 1;
             position: relative;
@@ -143,6 +148,7 @@
             width: 100%;
             height: 100%;
         }
+        /* MAP CONTROLS */
         .map-controls {
             position: absolute;
             top: 10px;
@@ -167,6 +173,7 @@
             color: white;
             transform: scale(1.1);
         }
+        /* LEGEND */
         .map-legend {
             position: absolute;
             bottom: 20px;
@@ -196,6 +203,7 @@
             margin-right: 10px;
             border: 1px solid #333;
         }
+        /* LOADING */
         .loading-overlay {
             position: absolute;
             top: 0;
@@ -223,6 +231,7 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* POPUP */
         .leaflet-popup-content-wrapper {
             border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
@@ -279,6 +288,7 @@
         .error-message.active {
             display: block;
         }
+        /* RESPONSIVE */
         @media (max-width: 768px) {
             .sidebar {
                 position: absolute;
@@ -311,6 +321,7 @@
         <h1>🌊 Simulador de Inundações - Angola 🇦🇴</h1>
     </div>
     <div class="main-container">
+        <!-- SIDEBAR -->
         <div class="sidebar">
             <div class="control-panel">
                 <h2>⚙️ Configurações</h2>
@@ -377,6 +388,7 @@
                 </div>
             </div>
         </div>
+        <!-- MAP CONTAINER -->
         <div class="map-container">
             <div id="map"></div>
             <div class="map-controls">
@@ -466,6 +478,7 @@
                         });
                         // Carrega municípios para a província padrão (Luanda)
                         if (data.data.length > 0) {
+                            select.value = data.data[0].name;
                             loadMunicipalities(data.data[0].name);
                         }
                     } else {
@@ -611,20 +624,18 @@
             if (currentLayer) {
                 map.removeLayer(currentLayer);
             }
+            currentLayer = L.layerGroup().addTo(map);
             const geoJsonData = JSON.parse(data.geojson);
-            currentLayer = L.geoJSON(geoJsonData, {
-                style: function(feature) {
+            const isSingleBairro = data.parameters.level === 'bairro' && data.parameters.bairro !== 'all';
+
+            if (isSingleBairro) {
+                // Modo para bairro específico: usar ícone de localização com cor baseada no nível de inundação
+                if (geoJsonData.features.length > 0) {
+                    const feature = geoJsonData.features[0];
                     const props = feature.properties;
-                    return {
-                        fillColor: getFloodColor(props.waterLevel, props.severity),
-                        fillOpacity: props.flooded ? 0.7 : 0.3,
-                        color: props.flooded ? '#FF5722' : '#666',
-                        weight: props.flooded ? 2.5 : 1,
-                        opacity: 1
-                    };
-                },
-                onEachFeature: function(feature, layer) {
-                    const props = feature.properties;
+                    const color = getFloodColor(props.waterLevel, props.severity);
+                    const coords = feature.geometry.coordinates || [props.lon, props.lat] || [-8.8383, 13.2344]; // Fallback para Luanda
+
                     const popupContent = `
                         <div class="popup-content">
                             <h3>${props.name}</h3>
@@ -664,60 +675,117 @@
                             </div>
                         </div>
                     `;
-                    layer.bindPopup(popupContent);
-                    layer.on({
-                        mouseover: function(e) {
-                            e.target.setStyle({
-                                weight: 3,
-                                color: '#FFF',
-                                fillOpacity: 0.9
-                            });
-                        },
-                        mouseout: function(e) {
-                            currentLayer.resetStyle(e.target);
-                        }
+
+                    const customIcon = L.divIcon({
+                        className: 'custom-icon',
+                        html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
                     });
+
+                    const marker = L.marker([coords[1], coords[0]], { icon: customIcon }).addTo(currentLayer);
+                    marker.bindPopup(popupContent);
+                    map.fitBounds([[coords[1], coords[0]]], { padding: [50, 50] });
+                    map.setView([coords[1], coords[0]], 15); // Zoom mais próximo para bairro específico
                 }
-            }).addTo(map);
-            map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
+            } else {
+                // Modo padrão para múltiplos itens: usar GeoJSON com polígonos
+                L.geoJSON(geoJsonData, {
+                    style: function(feature) {
+                        const props = feature.properties;
+                        return {
+                            fillColor: getFloodColor(props.waterLevel, props.severity),
+                            fillOpacity: props.flooded ? 0.7 : 0.3,
+                            color: props.flooded ? '#FF5722' : '#666',
+                            weight: props.flooded ? 2.5 : 1,
+                            opacity: 1
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        const props = feature.properties;
+                        const popupContent = `
+                            <div class="popup-content">
+                                <h3>${props.name}</h3>
+                                <div class="info-row">
+                                    <span class="info-label">Status:</span>
+                                    <span class="status-badge ${props.flooded ? 'status-flooded' : 'status-safe'}">
+                                        ${props.flooded ? '🚨 INUNDADA' : '✅ SEGURA'}
+                                    </span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Nível de Água:</span>
+                                    <span class="info-value">${props.waterLevel.toFixed(2)}m</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Severidade:</span>
+                                    <span class="info-value">${props.severity}</span>
+                                </div>
+                                ${props.elevation ? `
+                                <div class="info-row">
+                                    <span class="info-label">Elevação:</span>
+                                    <span class="info-value">${props.elevation.toFixed(0)}m</span>
+                                </div>
+                                ` : ''}
+                                ${props.elevation_min && props.elevation_max ? `
+                                <div class="info-row">
+                                    <span class="info-label">Variação:</span>
+                                    <span class="info-value">${props.elevation_min.toFixed(0)}m - ${props.elevation_max.toFixed(0)}m</span>
+                                </div>
+                                ` : ''}
+                                <div class="info-row">
+                                    <span class="info-label">População Afetada:</span>
+                                    <span class="info-value">${formatNumber(props.affectedPopulation)}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Recuperação:</span>
+                                    <span class="info-value">${props.recoveryDays} dias</span>
+                                </div>
+                            </div>
+                        `;
+                        layer.bindPopup(popupContent);
+                        layer.on({
+                            mouseover: function(e) {
+                                e.target.setStyle({
+                                    weight: 3,
+                                    color: '#FFF',
+                                    fillOpacity: 0.9
+                                });
+                            },
+                            mouseout: function(e) {
+                                layer.resetStyle(e.target);
+                            }
+                        });
+                    }
+                }).addTo(currentLayer);
+                map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
+            }
         }
 
         document.getElementById('level').addEventListener('change', function() {
             const level = this.value;
             const municipalityGroup = document.getElementById('municipality-group');
             const bairroGroup = document.getElementById('bairro-group');
-            const municipalitySelect = document.getElementById('municipality');
-            const bairroSelect = document.getElementById('bairro');
-            console.log('Nível alterado:', level);
             if (level === 'province') {
                 municipalityGroup.style.display = 'none';
                 bairroGroup.style.display = 'none';
-                municipalitySelect.innerHTML = '<option value="all">Todos</option>';
-                bairroSelect.innerHTML = '<option value="all">Todos</option>';
             } else if (level === 'municipality') {
                 municipalityGroup.style.display = 'block';
                 bairroGroup.style.display = 'none';
-                bairroSelect.innerHTML = '<option value="all">Todos</option>';
-                loadMunicipalities(document.getElementById('province').value);
             } else if (level === 'bairro') {
                 municipalityGroup.style.display = 'block';
                 bairroGroup.style.display = 'block';
-                loadMunicipalities(document.getElementById('province').value);
             }
         });
 
         document.getElementById('province').addEventListener('change', function() {
-            console.log('Província alterada:', this.value);
             loadMunicipalities(this.value);
         });
 
         document.getElementById('municipality').addEventListener('change', function() {
-            console.log('Município alterado:', this.value);
             loadBairros(this.value);
         });
 
         window.onload = function() {
-            console.log('Inicializando aplicação...');
             initMap();
             loadProvinces();
         };
