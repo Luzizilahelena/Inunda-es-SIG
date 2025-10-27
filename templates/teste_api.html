@@ -409,7 +409,7 @@
             return new Intl.NumberFormat('pt-BR').format(num);
         }
 
-        function getColorByWaterLevel(level) {
+       /* function getColorByWaterLevel(level) {
     if (level === 0) return 'rgba(200, 200, 200, 0.3)'; // Não inundado
 
     if (level <= 8) {
@@ -421,7 +421,7 @@
     } else {
         return 'rgba(136, 14, 79, 0.9)';   // Crítica (>25m)
     }
-}
+}*/
       /* function getMapStyle(feature) {
     const p = feature.properties;
     const fillColor = p.flooded ? getColorByWaterLevel(p.waterLevel) : 'rgba(200, 200, 200, 0.3)';
@@ -544,7 +544,7 @@
             });
         }
 
-f// CORREÇÃO 1: Função de cor baseada na SEVERIDADE (não apenas nível de água)
+// CORREÇÃO 1: Função de cor baseada na SEVERIDADE (não apenas nível de água)
 function getColorByWaterLevel(level, severity) {
     // Se não está inundado
     if (level === 0 || !severity || severity === 'Nenhuma') {
