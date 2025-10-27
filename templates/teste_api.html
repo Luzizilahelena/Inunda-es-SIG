@@ -422,7 +422,7 @@
         return 'rgba(136, 14, 79, 0.9)';   // Crítica (>25m)
     }
 }
-       function getMapStyle(feature) {
+      /* function getMapStyle(feature) {
     const p = feature.properties;
     const fillColor = p.flooded ? getColorByWaterLevel(p.waterLevel) : 'rgba(200, 200, 200, 0.3)';
     return {
@@ -432,7 +432,7 @@
         weight: p.flooded ? 2 : 1,
         opacity: 1
     };
-}
+}*/
 
         // CARREGAR PROVÍNCIAS
         function loadProvinces() {
@@ -544,99 +544,234 @@
             });
         }
 
+f// CORREÇÃO 1: Função de cor baseada na SEVERIDADE (não apenas nível de água)
+function getColorByWaterLevel(level, severity) {
+    // Se não está inundado
+    if (level === 0 || !severity || severity === 'Nenhuma') {
+        return 'rgba(200, 200, 200, 0.3)'; // Cinza claro
+    }
+
+    // Priorizar severidade sobre o nível de água
+    switch(severity) {
+        case 'Leve':
+            return 'rgba(66, 165, 245, 0.6)';   // Azul claro
+        case 'Moderada':
+            return 'rgba(255, 152, 0, 0.7)';    // Laranja
+        case 'Grave':
+            return 'rgba(244, 67, 54, 0.8)';    // Vermelho
+        case 'Crítica':
+            return 'rgba(136, 14, 79, 0.9)';    // Roxo escuro
+        default:
+            // Fallback: se não tiver severidade, usar nível de água
+            if (level <= 8) return 'rgba(66, 165, 245, 0.6)';
+            else if (level <= 15) return 'rgba(255, 152, 0, 0.7)';
+            else if (level <= 25) return 'rgba(244, 67, 54, 0.8)';
+            else return 'rgba(136, 14, 79, 0.9)';
+    }
+}
+
+// CORREÇÃO 2: Atualizar getMapStyle para passar a severidade
+function getMapStyle(feature) {
+    const p = feature.properties;
+    const fillColor = p.flooded 
+        ? getColorByWaterLevel(p.waterLevel, p.severity) 
+        : 'rgba(200, 200, 200, 0.3)';
+    
+    return {
+        fillColor: fillColor,
+        fillOpacity: p.flooded ? 0.7 : 0.3,
+        color: p.flooded ? '#333' : '#999',
+        weight: p.flooded ? 2 : 1,
+        opacity: 1
+    };
+}
+
+// CORREÇÃO 3: Função displayResults com cálculo correto de taxa de risco
 function displayResults(data) {
     // --- ESTATÍSTICAS ---
     document.getElementById('statsContainer').style.display = 'block';
     document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
     document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
-    document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
-    document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
+    
+    // CORREÇÃO: Usar o total correto de áreas analisadas
+    const totalAreas = data.data.length;
+    document.getElementById('statTotal').textContent = formatNumber(totalAreas);
+    
+    // CORREÇÃO: Calcular taxa de risco considerando o contexto
+    let riskRate;
+    const level = document.getElementById('level').value;
+    const bairroSelected = document.getElementById('bairro').value;
+    const municipalitySelected = document.getElementById('municipality').value;
+    
+    // Se está analisando um bairro específico, mostrar probabilidade de risco dele
+    if (level === 'bairro' && bairroSelected !== 'all') {
+        // Para bairro específico: mostrar se está inundado ou não em %
+        riskRate = data.statistics.floodedCount > 0 ? 100 : 0;
+        const riskText = data.statistics.floodedCount > 0 
+            ? `<span style="color: #d32f2f;">⚠️ INUNDADO</span>` 
+            : `<span style="color: #388e3c;">✓ SEGURO</span>`;
+        document.getElementById('statRisk').innerHTML = riskText;
+    } else {
+        // Para múltiplas áreas: calcular percentual
+        riskRate = totalAreas > 0 ? (data.statistics.floodedCount / totalAreas * 100) : 0;
+        document.getElementById('statRisk').textContent = riskRate.toFixed(1) + '%';
+    }
 
     // --- MAPA ---
     if (currentLayer) map.removeLayer(currentLayer);
     const geojson = JSON.parse(data.geojson);
+    
     currentLayer = L.geoJSON(geojson, {
         style: getMapStyle,
         onEachFeature: (f, l) => {
             const p = f.properties;
+            
+            // Definir cor da severidade para o popup
+            let severityColor = '#666';
+            if (p.severity === 'Leve') severityColor = '#42a5f5';
+            else if (p.severity === 'Moderada') severityColor = '#ff9800';
+            else if (p.severity === 'Grave') severityColor = '#f44336';
+            else if (p.severity === 'Crítica') severityColor = '#880e4f';
+            
             l.bindPopup(`
-                <div style="font-family:Poppins;min-width:220px;">
+                <div style="font-family:Poppins;min-width:240px;">
                     <h3 style="margin:0 0 8px;color:var(--primary);border-bottom:2px solid var(--accent);padding-bottom:4px;">${p.name}</h3>
                     <div style="font-size:0.9em;">
-                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;">
                             <span style="font-weight:600;color:#555;">Status:</span>
                             <span class="status-badge ${p.flooded?'status-flooded':'status-safe'}">
                                 ${p.flooded?'INUNDADA':'SEGURA'}
                             </span>
                         </div>
-                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
-                            <span style="font-weight:600;color:#555;">Água:</span>
+                        ${p.flooded ? `
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;">
+                            <span style="font-weight:600;color:#555;">Severidade:</span>
+                            <span style="color:${severityColor};font-weight:600;">${p.severity}</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;">
+                            <span style="font-weight:600;color:#555;">Nível de Água:</span>
                             <span style="color:var(--primary);font-weight:600;">${p.waterLevel.toFixed(2)}m</span>
                         </div>
-                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
-                            <span style="font-weight:600;color:#555;">População:</span>
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;">
+                            <span style="font-weight:600;color:#555;">Pop. Afetada:</span>
                             <span>${formatNumber(p.affectedPopulation)}</span>
                         </div>
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;">
+                            <span style="font-weight:600;color:#555;">Recuperação:</span>
+                            <span>${p.recoveryDays} dias</span>
+                        </div>
+                        ` : `
+                        <div style="padding:8px;background:#e8f5e9;border-radius:6px;margin-top:8px;text-align:center;">
+                            <span style="color:#388e3c;font-weight:600;">✓ Área Segura</span>
+                        </div>
+                        `}
+                        ${p.elevation ? `
+                        <div style="display:flex;justify-content:space-between;margin:6px 0;padding:3px 0;border-top:1px solid #eee;margin-top:8px;padding-top:6px;">
+                            <span style="font-weight:600;color:#555;">Elevação:</span>
+                            <span style="font-size:0.9em;">${p.elevation.toFixed(1)}m</span>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
             `);
         }
     }).addTo(map);
+    
     map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
 
-    // --- RESULTADOS DETALHADOS (CARDS) ---
-    const items = geojson.features.map(f => f.properties).filter(p => p.flooded); // Só inundadas
+    // --- RESULTADOS DETALHADOS ---
+    const allAreas = geojson.features.map(f => f.properties);
+    const floodedAreas = allAreas.filter(p => p.flooded === true);
+    
     const content = document.getElementById('resultsContent');
     const title = document.getElementById('resultsTitle');
 
-    if (items.length === 0) {
-        title.textContent = '';
-        content.innerHTML = '<p class="empty-state">Nenhuma área inundada com os parâmetros atuais.</p>';
-        return;
-    }
-
     // Determina o título com base no nível
-    const level = document.getElementById('level').value;
     let areaName = 'Angola';
     if (level === 'province' && document.getElementById('province').value !== 'all') {
         areaName = document.getElementById('province').value;
-    } else if (level === 'municipality' && document.getElementById('municipality').value !== 'all') {
-        areaName = document.getElementById('municipality').value;
-    } else if (level === 'bairro' && document.getElementById('bairro').value !== 'all') {
-        areaName = document.getElementById('bairro').value;
+    } else if (level === 'municipality' && municipalitySelected !== 'all') {
+        areaName = municipalitySelected;
+    } else if (level === 'bairro') {
+        if (bairroSelected !== 'all') {
+            areaName = bairroSelected;
+        } else {
+            areaName = municipalitySelected;
+        }
     }
-    title.textContent = `Resultados para ${areaName}`;
 
-    // Gera cards
-    let cardsHTML = '';
-    items.forEach(p => {
+    if (floodedAreas.length === 0) {
+        title.textContent = `Resultados para ${areaName}`;
+        content.innerHTML = `
+            <div style="text-align:center;padding:40px 20px;background:linear-gradient(135deg, #e8f5e9, #c8e6c9);border-radius:12px;">
+                <div style="font-size:3em;margin-bottom:15px;">✅</div>
+                <h3 style="color:#388e3c;margin-bottom:10px;">Área Segura!</h3>
+                <p style="color:#555;font-size:0.95em;">Nenhuma inundação detectada com os parâmetros atuais.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Título diferenciado para bairro único
+    if (level === 'bairro' && bairroSelected !== 'all') {
+        title.textContent = `Análise do Bairro: ${areaName}`;
+    } else {
+        title.textContent = `${floodedAreas.length} de ${totalAreas} áreas inundadas em ${areaName}`;
+    }
+
+    // Gera cards apenas para áreas inundadas
+    let cardsHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:15px;">';
+    
+    floodedAreas.forEach(p => {
+        // Determinar cor do card baseado na severidade
+        let severityColor = '#42a5f5'; // Leve
+        let severityBg = '#e3f2fd';
+        
+        if (p.severity === 'Moderada') {
+            severityColor = '#ff9800';
+            severityBg = '#fff3e0';
+        } else if (p.severity === 'Grave') {
+            severityColor = '#f44336';
+            severityBg = '#ffebee';
+        } else if (p.severity === 'Crítica') {
+            severityColor = '#880e4f';
+            severityBg = '#fce4ec';
+        }
+
         cardsHTML += `
-            <div class="result-card">
-                <div class="card-header">
-                    <h3>${p.name}</h3>
+            <div style="background:white;border-radius:12px;padding:18px;box-shadow:0 3px 12px rgba(0,0,0,0.12);border-left:5px solid ${severityColor};transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='translateY(0)'">
+                <h3 style="margin:0 0 12px;color:var(--primary);font-size:1.15em;">${p.name}</h3>
+                
+                <div style="background:${severityBg};padding:10px;border-radius:8px;margin-bottom:12px;text-align:center;">
+                    <div style="font-size:0.85em;color:#666;margin-bottom:4px;">SEVERIDADE</div>
+                    <div style="font-size:1.3em;font-weight:700;color:${severityColor};">${p.severity}</div>
                 </div>
-                <div class="card-body">
-                    <div class="info-row">
-                        <span>Status:</span>
-                        <span class="status-badge status-fflooded">Inundada</span>
+                
+                <div style="font-size:0.9em;">
+                    <div style="display:flex;justify-content:space-between;margin:8px 0;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="color:#666;">Nível de Água:</span>
+                        <strong style="color:${severityColor};font-size:1.1em;">${p.waterLevel.toFixed(2)} m</strong>
                     </div>
-                    <div class="info-row">
-                        <span>Nível de Água:</span>
-                        <strong class="water-level">${p.waterLevel.toFixed(2)} m</strong>
+                    <div style="display:flex;justify-content:space-between;margin:8px 0;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="color:#666;">População Afetada:</span>
+                        <strong style="color:#d32f2f;">${formatNumber(p.affectedPopulation)}</strong>
                     </div>
-                    <div class="info-row">
-                        <span>População Afetada:</span>
-                        <strong>${formatNumber(p.affectedPopulation)}</strong>
-                    </div>
-                    <div class="info-row">
-                        <span>Dias de Recuperação:</span>
+                    <div style="display:flex;justify-content:space-between;margin:8px 0;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+                        <span style="color:#666;">Tempo de Recuperação:</span>
                         <strong>${p.recoveryDays || 'N/D'} dias</strong>
                     </div>
+                    ${p.elevation ? `
+                    <div style="display:flex;justify-content:space-between;margin:8px 0;padding:6px 0;">
+                        <span style="color:#666;">Elevação Média:</span>
+                        <span style="font-size:0.9em;color:#888;">${p.elevation.toFixed(1)}m</span>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
         `;
     });
-
+    
+    cardsHTML += '</div>';
     content.innerHTML = cardsHTML;
 }
 
