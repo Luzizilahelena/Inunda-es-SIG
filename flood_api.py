@@ -39,7 +39,7 @@ MUNICIPALITIES = {
 }
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
 BAIRROS = {
-    'Kilamba  Kiaxi': [
+    'Kilamba Kiaxi': [
         {'id': 19, 'name': 'Golfe', 'population': 300000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 20, 'name': 'Palanca', 'population': 280000, 'type': 'Residencial', 'risk': 'Alto'},
         {'id': 21, 'name': 'Kilamba', 'population': 450000, 'type': 'Residencial', 'risk': 'Médio'},
@@ -467,52 +467,93 @@ def get_provinces():
     })
 @app.route('/api/municipalities', methods=['GET'])
 def get_municipalities():
-    province = request.args.get('province', None)
-    logger.info(f"Listando municípios - Província: {province}")
-   
-    if province != 'Luanda':  # Forçar só Luanda
-        return jsonify({'success': True, 'data': [], 'count': 0, 'message': 'Apenas Luanda disponível'})
-   
+    province = request.args.get('province', 'Luanda')
+    logger.info(f"Listando municípios para: {province}")
+
+    if province != 'Luanda':
+        return jsonify({'success': True, 'data': [], 'count': 0})
+
+    # === DADOS ESTÁTICOS (sempre disponíveis) ===
+    static_muns = MUNICIPALITIES.get('Luanda', [])
+
+    # === BAIXAR GADM (para geometria) ===
     gdf = download_and_read_gadm_json('AGO', 2)
     if gdf is None:
-        return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-   
-    if province and province != 'all':
-        gdf = gdf[gdf['NAME_1'] == province]
-   
+        logger.warning("GADM falhou. Usando apenas dados estáticos.")
+        municipalities = [
+            {
+                'id': m['id'],
+                'name': m['name'],
+                'province': 'Luanda',
+                'risk': m['risk'],
+                'population': m['population'],
+                'area': m['area'],
+                'lat': -8.9,
+                'lon': 13.3
+            } for m in static_muns
+        ]
+        return jsonify({'success': True, 'data': municipalities, 'count': len(municipalities)})
+
+    gdf = gdf[gdf['NAME_1'] == 'Luanda']
     municipalities = []
-    for index, row in gdf.iterrows():
-        prov = row['NAME_1']
-        name = row['NAME_2']
-       
-        static_mun = next((m for m in MUNICIPALITIES.get(prov, []) if m['name'] == name), None)
-       
-        if static_mun:  # Só adicionar se existir em MUNICIPALITIES
-            pop = static_mun['population']
-            area = static_mun['area']
-            risk = static_mun['risk']
-            id_ = static_mun['id']
-           
-            centroid = row['geometry'].centroid
-           
-            municipalities.append({
-                'id': id_,
-                'name': name,
-                'province': prov,
-                'risk': risk,
-                'population': pop,
-                'area': area,
-                'lat': centroid.y,
-                'lon': centroid.x
-            })
-   
+
+    # === MAPEAR NOMES DO GADM PARA SEUS DADOS ESTÁTICOS ===
+    gadm_to_static = {
+        'Belas': 'Belas',
+        'Cacuaco': 'Cacuaco',
+        'Cazenga': 'Cazenga',
+        'Icolo e Bengo': 'Icolo e Bengo',
+        'Luanda': 'Luanda',
+        'Quiçama': 'Quiçama',
+        'Viana': 'Viana',
+        'Kilamba-Kiaxi': 'Kilamba Kiaxi',   # <--- AQUI ESTÁ A CORREÇÃO!
+        'Talatona': 'Talatona',
+        'Maianga': 'Maianga',
+        'Rangel': 'Rangel',
+        'Ingombota': 'Ingombota',
+        'Samba': 'Samba',
+        'Sambizanga': 'Sambizanga'
+    }
+
+    for _, row in gdf.iterrows():
+        gadm_name = row['NAME_2']
+        static_name = gadm_to_static.get(gadm_name)
+
+        if static_name:
+            static_mun = next((m for m in static_muns if m['name'] == static_name), None)
+            if static_mun:
+                centroid = row['geometry'].centroid
+                municipalities.append({
+                    'id': static_mun['id'],
+                    'name': static_name,  # Usa o nome do seu sistema
+                    'province': 'Luanda',
+                    'risk': static_mun['risk'],
+                    'population': static_mun['population'],
+                    'area': static_mun['area'],
+                    'lat': centroid.y,
+                    'lon': centroid.x
+                })
+
+    # === GARANTIR QUE KILAMBA KIAXI APAREÇA (fallback) ===
+    if not any(m['name'] == 'Kilamba Kiaxi' for m in municipalities):
+        municipalities.append({
+            'id': 8,
+            'name': 'Kilamba Kiaxi',
+            'province': 'Luanda',
+            'risk': 'Muito Alto',
+            'population': 1800000,
+            'area': 189,
+            'lat': -8.92,
+            'lon': 13.28
+        })
+
     return jsonify({
         'success': True,
         'data': municipalities,
         'count': len(municipalities),
-        'filter': {'province': province} if province else None,
         'timestamp': datetime.now().isoformat()
     })
+
 @app.route('/api/bairros', methods=['GET'])
 def get_bairros():
     """ENDPOINT: Lista bairros de um município específico"""
