@@ -28,7 +28,10 @@
             font-family: 'Poppins', sans-serif;
             overflow: hidden;
             height: 100vh;
+            background: var(--bg);
         }
+
+        /* ===================== HEADER ===================== */
         .header {
             background: linear-gradient(90deg, var(--primary), var(--primary-light));
             color: white;
@@ -36,22 +39,30 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             position: relative;
             z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         .header h1 {
             font-size: 1.5em;
             margin: 0;
             font-weight: 700;
         }
+
+        /* ===================== MAIN CONTAINER ===================== */
         .main-container {
             display: flex;
             height: calc(100vh - 70px);
         }
+
+        /* ===================== SIDEBAR ===================== */
         .sidebar {
             width: 350px;
             background: white;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
             overflow-y: auto;
             z-index: 500;
+            transition: left 0.35s ease;
         }
         .control-panel {
             padding: 20px;
@@ -108,6 +119,8 @@
             cursor: not-allowed;
             transform: none;
         }
+
+        /* ===================== STATS ===================== */
         .stats-container {
             padding: 15px 20px;
             background: #f5f5f5;
@@ -135,6 +148,8 @@
             color: #666;
             margin-top: 3px;
         }
+
+        /* ===================== MAP ===================== */
         .map-container {
             flex: 1;
             position: relative;
@@ -142,6 +157,7 @@
         #map {
             width: 100%;
             height: 100%;
+            z-index: 1;
         }
         .map-controls {
             position: absolute;
@@ -196,6 +212,8 @@
             margin-right: 10px;
             border: 1px solid #333;
         }
+
+        /* ===================== LOADING & ERROR ===================== */
         .loading-overlay {
             position: absolute;
             top: 0;
@@ -223,6 +241,20 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .error-message {
+            background: #ffebee;
+            color: var(--danger);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9em;
+            display: none;
+        }
+        .error-message.active {
+            display: block;
+        }
+
+        /* ===================== POPUP ===================== */
         .leaflet-popup-content-wrapper {
             border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
@@ -267,50 +299,90 @@
             background: #e8f5e9;
             color: var(--success);
         }
-        .error-message {
-            background: #ffebee;
-            color: var(--danger);
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 10px;
-            font-size: 0.9em;
-            display: none;
-        }
-        .error-message.active {
-            display: block;
-        }
+
+        /* ===================== RESPONSIVO (MOBILE) ===================== */
         @media (max-width: 768px) {
+            .header {
+                padding: 12px 16px;
+            }
+            .header h1 {
+                font-size: 1.3rem;
+            }
+
+            /* Sidebar em tela cheia */
             .sidebar {
-                position: absolute;
-                left: -350px;
-                height: 100%;
-                transition: left 0.3s;
-                z-index: 2000;
+                position: fixed;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100vh;
+                background: white;
+                z-index: 2500;
+                transition: left 0.35s ease;
+                overflow-y: auto;
+                padding-bottom: 80px;
             }
             .sidebar.active {
                 left: 0;
             }
+
+            /* Botão mobile */
             .mobile-toggle {
-                position: absolute;
-                top: 10px;
-                left: 10px;
-                z-index: 1001;
-                background: white;
+                display: block;
+                background: rgba(255,255,255,0.95);
                 border: none;
-                padding: 10px 15px;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 1.4rem;
+                box-shadow: 0 2px 6px rgba(0,0,0,.2);
                 cursor: pointer;
-                font-size: 1.2em;
+                z-index: 2600;
+            }
+
+            /* Overlay escuro quando sidebar aberto */
+            .sidebar.active ~ .map-container::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background: rgba(0,0,0,.4);
+                z-index: 2400;
+                pointer-events: auto;
+            }
+
+            /* Mapa */
+            #map {
+                z-index: 1;
+            }
+
+            /* Ajuste de controles */
+            .map-legend {
+                bottom: 15px;
+                right: 15px;
+                font-size: 0.85rem;
+                padding: 12px;
+                min-width: 180px;
+            }
+        }
+
+        /* Esconde botão mobile no desktop */
+        @media (min-width: 769px) {
+            .mobile-toggle {
+                display: none;
             }
         }
     </style>
 </head>
 <body>
+
+    <!-- ===================== HEADER COM BOTÃO MOBILE ===================== -->
     <div class="header">
         <h1>Simulador de Inundações - Angola</h1>
+        <button class="mobile-toggle" id="mobileToggle">Menu</button>
     </div>
+
+    <!-- ===================== MAIN ===================== -->
     <div class="main-container">
+        <!-- ===================== SIDEBAR ===================== -->
         <div class="sidebar">
             <div class="control-panel">
                 <h2>Configurações</h2>
@@ -350,11 +422,12 @@
                 </div>
                 <div class="form-group">
                     <button class="btn-simulate" onclick="runSimulation()">
-                        🌊 Executar Simulação
+                        Executar Simulação
                     </button>
                 </div>
                 <div class="error-message" id="errorMessage"></div>
             </div>
+
             <div class="stats-container" id="statsContainer" style="display: none;">
                 <h2 style="margin-bottom: 15px; color: var(--primary); font-size: 1.1em;">Estatísticas</h2>
                 <div class="stats-grid">
@@ -377,12 +450,13 @@
                 </div>
             </div>
         </div>
+
+        <!-- ===================== MAPA ===================== -->
         <div class="map-container">
             <div id="map"></div>
-            <div class="map-controls">
-            </div>
+            <div class="map-controls"></div>
             <div class="map-legend">
-                <h4>📍 Legenda</h4>
+                <h4>Legenda</h4>
                 <div class="legend-item">
                     <div class="legend-color" style="background: rgba(66, 165, 245, 0.6);"></div>
                     <span>Inundação Leve (5-8m)</span>
@@ -408,6 +482,8 @@
             </div>
         </div>
     </div>
+
+    <!-- ===================== SCRIPTS ===================== -->
     <script>
         let map = null;
         let currentLayer = null;
@@ -427,15 +503,10 @@
 
         function getFloodColor(waterLevel, severity) {
             if (waterLevel === 0) return 'rgba(200, 200, 200, 0.3)';
-            if (severity === 'Crítica' || waterLevel > 25) {
-                return 'rgba(136, 14, 79, 0.85)';
-            } else if (severity === 'Grave' || waterLevel > 15) {
-                return 'rgba(244, 67, 54, 0.75)';
-            } else if (severity === 'Moderada' || waterLevel > 8) {
-                return 'rgba(255, 152, 0, 0.65)';
-            } else {
-                return 'rgba(66, 165, 245, 0.55)';
-            }
+            if (severity === 'Crítica' || waterLevel > 25) return 'rgba(136, 14, 79, 0.85)';
+            if (severity === 'Grave' || waterLevel > 15) return 'rgba(244, 67, 54, 0.75)';
+            if (severity === 'Moderada' || waterLevel > 8) return 'rgba(255, 152, 0, 0.65)';
+            return 'rgba(66, 165, 245, 0.55)';
         }
 
         function formatNumber(num) {
@@ -443,118 +514,80 @@
         }
 
         function loadProvinces() {
-            console.log('Carregando províncias...');
             fetch(`${API_URL}/api/provinces`)
-                .then(response => {
-                    console.log('Resposta de /api/provinces:', response);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    return response.json();
-                })
+                .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
                 .then(data => {
-                    console.log('Dados de províncias:', data);
                     if (data.success) {
                         const select = document.getElementById('province');
                         select.innerHTML = '<option value="all">Todas</option>';
                         data.data.forEach(prov => {
-                            const option = document.createElement('option');
-                            option.value = prov.name;
-                            option.textContent = prov.name;
-                            select.appendChild(option);
+                            const opt = new Option(prov.name, prov.name);
+                            select.add(opt);
                         });
-                        // Carrega municípios para a província padrão (Luanda)
-                        if (data.data.length > 0) {
-                            loadMunicipalities(data.data[0].name);
-                        }
-                    } else {
-                        showError('Erro ao carregar províncias: ' + data.error);
-                    }
+                        if (data.data.length > 0) loadMunicipalities(data.data[0].name);
+                    } else showError('Erro ao carregar províncias: ' + data.error);
                 })
-                .catch(error => showError('Erro ao carregar províncias: ' + error.message));
+                .catch(err => showError('Erro: ' + err));
         }
 
         function loadMunicipalities(province) {
-            console.log(`Carregando municípios para província: ${province}`);
-            const municipalityGroup = document.getElementById('municipality-group');
-            const municipalitySelect = document.getElementById('municipality');
+            const munGroup = document.getElementById('municipality-group');
+            const munSelect = document.getElementById('municipality');
             const bairroGroup = document.getElementById('bairro-group');
             const bairroSelect = document.getElementById('bairro');
+
             if (province === 'all') {
-                municipalityGroup.style.display = 'none';
+                munGroup.style.display = 'none';
                 bairroGroup.style.display = 'none';
-                municipalitySelect.innerHTML = '<option value="all">Todos</option>';
+                munSelect.innerHTML = '<option value="all">Todos</option>';
                 bairroSelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
+
             fetch(`${API_URL}/api/municipalities?province=${encodeURIComponent(province)}`)
-                .then(response => {
-                    console.log('Resposta de /api/municipalities:', response);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    return response.json();
-                })
+                .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
                 .then(data => {
-                    console.log('Dados de municípios:', data);
                     if (data.success) {
-                        municipalityGroup.style.display = 'block';
-                        municipalitySelect.innerHTML = '<option value="all">Todos</option>';
-                        data.data.forEach(mun => {
-                            const option = document.createElement('option');
-                            option.value = mun.name;
-                            option.textContent = mun.name;
-                            municipalitySelect.appendChild(option);
-                        });
-                        // Carrega bairros para o primeiro município, se disponível
-                        loadBairros(municipalitySelect.value);
-                    } else {
-                        showError('Erro ao carregar municípios: ' + data.error);
-                    }
+                        munGroup.style.display = 'block';
+                        munSelect.innerHTML = '<option value="all">Todos</option>';
+                        data.data.forEach(m => munSelect.add(new Option(m.name, m.name)));
+                        loadBairros(munSelect.value);
+                    } else showError('Erro ao carregar municípios');
                 })
-                .catch(error => showError('Erro ao carregar municípios: ' + error.message));
+                .catch(err => showError('Erro: ' + err));
         }
 
         function loadBairros(municipality) {
-            console.log(`Carregando bairros para município: ${municipality}`);
             const bairroGroup = document.getElementById('bairro-group');
             const bairroSelect = document.getElementById('bairro');
             const province = document.getElementById('province').value;
+
             if (municipality === 'all') {
                 bairroGroup.style.display = 'none';
                 bairroSelect.innerHTML = '<option value="all">Todos</option>';
                 return;
             }
+
             fetch(`${API_URL}/api/bairros?province=${encodeURIComponent(province)}&municipality=${encodeURIComponent(municipality)}`)
-                .then(response => {
-                    console.log(`Resposta de /api/bairros?province=${province}&municipality=${municipality}:`, response);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    return response.json();
-                })
+                .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
                 .then(data => {
-                    console.log('Dados de bairros:', data);
-                    if (data.success) {
-                        bairroGroup.style.display = 'block';
-                        bairroSelect.innerHTML = '<option value="all">Todos</option>';
-                        if (data.data.length === 0) {
-                            showError(`Nenhum bairro encontrado para ${municipality}`);
-                        } else {
-                            data.data.forEach(bairro => {
-                                const option = document.createElement('option');
-                                option.value = bairro.name;
-                                option.textContent = bairro.name;
-                                bairroSelect.appendChild(option);
-                            });
-                        }
+                    bairroGroup.style.display = 'block';
+                    bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                    if (data.success && data.data.length > 0) {
+                        data.data.forEach(b => bairroSelect.add(new Option(b.name, b.name)));
                     } else {
-                        showError('Erro ao carregar bairros: ' + data.error);
+                        bairroSelect.add(new Option('Nenhum bairro encontrado', '', true, false));
+                        showError(`Nenhum bairro em ${municipality}`);
                     }
                 })
-                .catch(error => showError('Erro ao carregar bairros: ' + error.message));
+                .catch(err => showError('Erro ao carregar bairros: ' + err));
         }
 
         function showError(message) {
-            console.error('Erro:', message);
-            const errorDiv = document.getElementById('errorMessage');
-            errorDiv.textContent = message;
-            errorDiv.classList.add('active');
-            setTimeout(() => errorDiv.classList.remove('active'), 5000);
+            const el = document.getElementById('errorMessage');
+            el.textContent = message;
+            el.classList.add('active');
+            set.Timeout(() => el.classList.remove('active'), 5000);
         }
 
         function runSimulation() {
@@ -562,41 +595,31 @@
             const province = document.getElementById('province').value;
             const municipality = document.getElementById('municipality').value;
             const bairro = document.getElementById('bairro').value;
-            const floodRate = document.getElementById('floodRate').value;
-            const waterLevel = document.getElementById('waterLevel').value.trim();
             const payload = {
-                level: level,
-                province: province,
+                level,
+                province,
                 municipality: (level === 'municipality' || level === 'bairro') ? municipality : 'all',
                 bairro: level === 'bairro' ? bairro : 'all',
-                floodRate: parseFloat(floodRate),
-                waterLevel: waterLevel ? parseFloat(waterLevel) : null
+                floodRate: parseFloat(document.getElementById('floodRate').value),
+                waterLevel: document.getElementById('waterLevel').value.trim() ? parseFloat(document.getElementById('waterLevel').value) : null
             };
-            console.log('Enviando simulação:', payload);
+
             document.getElementById('loadingOverlay').classList.add('active');
             fetch(`${API_URL}/api/simulate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             })
-                .then(response => {
-                    console.log('Resposta de /api/simulate:', response);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    return response.json();
-                })
-                .then(data => {
-                    document.getElementById('loadingOverlay').classList.remove('active');
-                    console.log('Dados da simulação:', data);
-                    if (data.success) {
-                        displayResults(data);
-                    } else {
-                        showError('Erro na simulação: ' + data.error);
-                    }
-                })
-                .catch(error => {
-                    document.getElementById('loadingOverlay').classList.remove('active');
-                    showError('Erro ao executar simulação: ' + error.message);
-                });
+            .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+            .then(data => {
+                document.getElementById('loadingOverlay').classList.remove('active');
+                if (data.success) displayResults(data);
+                else showError('Erro na simulação: ' + data.error);
+            })
+            .catch(err => {
+                document.getElementById('loadingOverlay').classList.remove('active');
+                showError('Erro: ' + err);
+            });
         }
 
         function displayResults(data) {
@@ -605,116 +628,73 @@
             document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
             document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
             document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
-            if (currentLayer) {
-                map.removeLayer(currentLayer);
-            }
-            const geoJsonData = JSON.parse(data.geojson);
-            currentLayer = L.geoJSON(geoJsonData, {
-                style: function(feature) {
-                    const props = feature.properties;
-                    return {
-                        fillColor: getFloodColor(props.waterLevel, props.severity),
-                        fillOpacity: props.flooded ? 0.7 : 0.3,
-                        color: props.flooded ? '#FF5722' : '#666',
-                        weight: props.flooded ? 2.5 : 1,
-                        opacity: 1
-                    };
-                },
-                onEachFeature: function(feature, layer) {
-                    const props = feature.properties;
-                    const popupContent = `
+
+            if (currentLayer) map.removeLayer(currentLayer);
+            const geojson = JSON.parse(data.geojson);
+            currentLayer = L.geoJSON(geojson, {
+                style: f => ({
+                    fillColor: getFloodColor(f.properties.waterLevel, f.properties.severity),
+                    fillOpacity: f.properties.flooded ? 0.7 : 0.3,
+                    color: f.properties.flooded ? '#FF5722' : '#666',
+                    weight: f.properties.flooded ? 2.5 : 1
+                }),
+                onEachFeature: (f, layer) => {
+                    const p = f.properties;
+                    const popup = `
                         <div class="popup-content">
-                            <h3>${props.name}</h3>
-                            <div class="info-row">
-                                <span class="info-label">Status:</span>
-                                <span class="status-badge ${props.flooded ? 'status-flooded' : 'status-safe'}">
-                                    ${props.flooded ? 'INUNDADA' : 'SEGURA'}
+                            <h3>${p.name}</h3>
+                            <div class="info-row"><span class="info-label">Status:</span>
+                                <span class="status-badge ${p.flooded ? 'status-flooded' : 'status-safe'}">
+                                    ${p.flooded ? 'INUNDADA' : 'SEGURA'}
                                 </span>
                             </div>
-                            <div class="info-row">
-                                <span class="info-label">Nível de Água:</span>
-                                <span class="info-value">${props.waterLevel.toFixed(2)}m</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Severidade:</span>
-                                <span class="info-value">${props.severity}</span>
-                            </div>
-                            ${props.elevation ? `
-                            <div class="info-row">
-                                <span class="info-label">Elevação:</span>
-                                <span class="info-value">${props.elevation.toFixed(0)}m</span>
-                            </div>
-                            ` : ''}
-                            ${props.elevation_min && props.elevation_max ? `
-                            <div class="info-row">
-                                <span class="info-label">Variação:</span>
-                                <span class="info-value">${props.elevation_min.toFixed(0)}m - ${props.elevation_max.toFixed(0)}m</span>
-                            </div>
-                            ` : ''}
-                            <div class="info-row">
-                                <span class="info-label">População Afetada:</span>
-                                <span class="info-value">${formatNumber(props.affectedPopulation)}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Recuperação:</span>
-                                <span class="info-value">${props.recoveryDays} dias</span>
-                            </div>
-                        </div>
-                    `;
-                    layer.bindPopup(popupContent);
-                    layer.on({
-                        mouseover: function(e) {
-                            e.target.setStyle({
-                                weight: 3,
-                                color: '#FFF',
-                                fillOpacity: 0.9
-                            });
-                        },
-                        mouseout: function(e) {
-                            currentLayer.resetStyle(e.target);
-                        }
-                    });
+                            <div class="info-row"><span class="info-label">Nível de Água:</span><span class="info-value">${p.waterLevel.toFixed(2)}m</span></div>
+                            <div class="info-row"><span class="info-label">Severidade:</span><span class="info-value">${p.severity}</span></div>
+                            ${p.elevation ? `<div class="info-row"><span class="info-label">Elevação:</span><span class="info-value">${p.elevation.toFixed(0)}m</span></div>` : ''}
+                            <div class="info-row"><span class="info-label">População Afetada:</span><span class="info-value">${formatNumber(p.affectedPopulation)}</span></div>
+                            <div class="info-row"><span class="info-label">Recuperação:</span><span class="info-value">${p.recoveryDays} dias</span></div>
+                        </div>`;
+                    layer.bindPopup(popup);
                 }
             }).addTo(map);
             map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
         }
 
-        document.getElementById('level').addEventListener('change', function() {
+        // Eventos
+        document.getElementById('level').addEventListener('change', function () {
             const level = this.value;
-            const municipalityGroup = document.getElementById('municipality-group');
-            const bairroGroup = document.getElementById('bairro-group');
-            const municipalitySelect = document.getElementById('municipality');
-            const bairroSelect = document.getElementById('bairro');
-            console.log('Nível alterado:', level);
+            const mGroup = document.getElementById('municipality-group');
+            const bGroup = document.getElementById('bairro-group');
             if (level === 'province') {
-                municipalityGroup.style.display = 'none';
-                bairroGroup.style.display = 'none';
-                municipalitySelect.innerHTML = '<option value="all">Todos</option>';
-                bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                mGroup.style.display = bGroup.style.display = 'none';
             } else if (level === 'municipality') {
-                municipalityGroup.style.display = 'block';
-                bairroGroup.style.display = 'none';
-                bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                mGroup.style.display = 'block';
+                bGroup.style.display = 'none';
                 loadMunicipalities(document.getElementById('province').value);
             } else if (level === 'bairro') {
-                municipalityGroup.style.display = 'block';
-                bairroGroup.style.display = 'block';
+                mGroup.style.display = bGroup.style.display = 'block';
                 loadMunicipalities(document.getElementById('province').value);
             }
         });
 
-        document.getElementById('province').addEventListener('change', function() {
-            console.log('Província alterada:', this.value);
-            loadMunicipalities(this.value);
+        document.getElementById('province').addEventListener('change', e => loadMunicipalities(e.target.value));
+        document.getElementById('municipality').addEventListener('change', e => loadBairros(e.target.value));
+
+        // Mobile menu toggle
+        document.getElementById('mobileToggle').addEventListener('click', () => {
+            document.querySelector('.sidebar').classList.toggle('active');
         });
 
-        document.getElementById('municipality').addEventListener('change', function() {
-            console.log('Município alterado:', this.value);
-            loadBairros(this.value);
+        // Fecha sidebar ao clicar fora
+        document.querySelector('.map-container').addEventListener('click', e => {
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar.classList.contains('active') && !sidebar.contains(e.target)) {
+                sidebar.classList.remove('active');
+            }
         });
 
-        window.onload = function() {
-            console.log('Inicializando aplicação...');
+        // Inicialização
+        window.onload = () => {
             initMap();
             loadProvinces();
         };
