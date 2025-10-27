@@ -355,7 +355,7 @@
             </div>
 
             <div class="stats-container" id="statsContainer" style="display: none;">
-                <h2 style="margin: 15px 20px 10px; color: var(--primary); font-size: 1.1em;">Estatísticas</h2>
+                <h2 style="margin: 15px 20px 10px; color: var(--primary); font-size: 1.1em;">Estatísticas da Simulação</h2>
                 <div class="stats-grid">
                     <div class="stat-card"><div class="value" id="statFlooded">0</div><div class="label">Áreas Inundadas</div></div>
                     <div class="stat-card"><div class="value" id="statPopulation">0</div><div class="label">População Afetada</div></div>
@@ -384,6 +384,7 @@
             <!-- RESULTADOS DETALHADOS -->
             <div class="results-section">
                 <h2>Resultados Detalhados</h2>
+                <div id="resultsTitle" style="margin-bottom: 15px; color: var(--primary); font-weight: 600;"></div>
                 <div id="resultsContent">
                     <p class="empty-state">Configure e execute uma simulação no painel lateral para visualizar os dados de risco e as áreas afetadas.</p>
                 </div>
@@ -409,149 +410,258 @@
         }
 
         function getColorByWaterLevel(level) {
-            if (level === 0) return 'var(--map-normal)';
-            const maxLevel = 5;
-            const intensity = Math.min(level / maxLevel, 1);
-            const r = Math.round(121 + (0 - 121) * intensity);
-            const g = Math.round(166 + (51 - 166) * intensity);
-            const b = Math.round(210 + (102 - 210) * intensity);
-            return `rgb(${r}, ${g}, ${b})`;
+    if (level === 0) return 'rgba(200, 200, 200, 0.3)'; // Não inundado
+
+    if (level <= 8) {
+        return 'rgba(66, 165, 245, 0.6)';   // Leve (5-8m)
+    } else if (level <= 15) {
+        return 'rgba(255, 152, 0, 0.7)';   // Moderada (8-15m)
+    } else if (level <= 25) {
+        return 'rgba(244, 67, 54, 0.8)';   // Grave (15-25m)
+    } else {
+        return 'rgba(136, 14, 79, 0.9)';   // Crítica (>25m)
+    }
+}
+       function getMapStyle(feature) {
+    const p = feature.properties;
+    const fillColor = p.flooded ? getColorByWaterLevel(p.waterLevel) : 'rgba(200, 200, 200, 0.3)';
+    return {
+        fillColor: fillColor,
+        fillOpacity: p.flooded ? 0.7 : 0.3,
+        color: p.flooded ? '#333' : '#999',
+        weight: p.flooded ? 2 : 1,
+        opacity: 1
+    };
+}
+
+        // CARREGAR PROVÍNCIAS
+        function loadProvinces() {
+            fetch(`${API_URL}/api/provinces`)
+                .then(r => r.ok ? r.json() : Promise.reject(`Erro ${r.status}`))
+                .then(data => {
+                    if (!data.success) throw new Error(data.error || 'Falha ao carregar');
+                    const select = document.getElementById('province');
+                    select.innerHTML = '<option value="all">Todas</option>';
+                    data.data.forEach(p => {
+                        const opt = new Option(p.name, p.name);
+                        select.add(opt);
+                    });
+                    // Carrega municípios da primeira província (ex: Luanda)
+                    if (data.data.length > 0) {
+                        loadMunicipalities(data.data[0].name);
+                    }
+                })
+                .catch(err => showError('Erro ao carregar províncias: ' + err.message));
         }
 
-        function getMapStyle(feature) {
-            const p = feature.properties;
-            const fillColor = p.flooded ? getColorByWaterLevel(p.waterLevel) : 'var(--map-normal)';
-            return {
-                fillColor, fillOpacity: p.flooded ? 0.8 : 0.6,
-                color: 'var(--map-border)', weight: p.flooded ? 1.0 : 0.8, opacity: 0.8
-            };
+        // CARREGAR MUNICÍPIOS
+        function loadMunicipalities(province) {
+            const munGroup = document.getElementById('municipality-group');
+            const munSelect = document.getElementById('municipality');
+            const bairroGroup = document.getElementById('bairro-group');
+            const bairroSelect = document.getElementById('bairro');
+
+            if (province === 'all') {
+                munGroup.style.display = 'none';
+                bairroGroup.style.display = 'none';
+                munSelect.innerHTML = '<option value="all">Todos</option>';
+                bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+
+            fetch(`${API_URL}/api/municipalities?province=${encodeURIComponent(province)}`)
+                .then(r => r.ok ? r.json() : Promise.reject(`Erro ${r.status}`))
+                .then(data => {
+                    if (!data.success) throw new Error(data.error);
+                    munGroup.style.display = 'block';
+                    munSelect.innerHTML = '<option value="all">Todos</option>';
+                    data.data.forEach(m => munSelect.add(new Option(m.name, m.name)));
+                    loadBairros(munSelect.value); // Carrega bairros do primeiro município
+                })
+                .catch(err => showError('Erro ao carregar municípios: ' + err.message));
         }
 
-        // Carregamento de dados
-        function loadProvinces() { /* ... mesmo que antes ... */ }
-        function loadMunicipalities(province) { /* ... */ }
-        function loadBairros(municipality) { /* ... */ }
+        // CARREGAR BAIRROS
+        function loadBairros(municipality) {
+            const bairroGroup = document.getElementById('bairro-group');
+            const bairroSelect = document.getElementById('bairro');
+            const province = document.getElementById('province').value;
+
+            if (municipality === 'all') {
+                bairroGroup.style.display = 'none';
+                bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+
+            fetch(`${API_URL}/api/bairros?province=${encodeURIComponent(province)}&municipality=${encodeURIComponent(municipality)}`)
+                .then(r => r.ok ? r.json() : Promise.reject(`Erro ${r.status}`))
+                .then(data => {
+                    bairroGroup.style.display = 'block';
+                    bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                    if (data.success && data.data.length > 0) {
+                        data.data.forEach(b => bairroSelect.add(new Option(b.name, b.name)));
+                    } else {
+                        bairroSelect.add(new Option('Nenhum bairro encontrado', '', true, false));
+                    }
+                })
+                .catch(err => showError('Erro ao carregar bairros: ' + err.message));
+        }
 
         function showError(msg) {
             const el = document.getElementById('errorMessage');
-            el.textContent = msg; el.classList.add('active');
+            el.textContent = msg;
+            el.classList.add('active');
             setTimeout(() => el.classList.remove('active'), 5000);
         }
 
         function runSimulation() {
+            const level = document.getElementById('level').value;
+            const province = document.getElementById('province').value;
+            const municipality = ['municipality', 'bairro'].includes(level) ? document.getElementById('municipality').value : 'all';
+            const bairro = level === 'bairro' ? document.getElementById('bairro').value : 'all';
+
             const payload = {
-                level: document.getElementById('level').value,
-                province: document.getElementById('province').value,
-                municipality: ['municipality', 'bairro'].includes(document.getElementById('level').value) ? document.getElementById('municipality').value : 'all',
-                bairro: document.getElementById('level').value === 'bairro' ? document.getElementById('bairro').value : 'all',
+                level, province, municipality, bairro,
                 floodRate: parseFloat(document.getElementById('floodRate').value),
                 waterLevel: document.getElementById('waterLevel').value ? parseFloat(document.getElementById('waterLevel').value) : null
             };
 
             document.getElementById('loadingOverlay').classList.add('active');
             fetch(`${API_URL}/api/simulate`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             })
             .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
             .then(data => {
                 document.getElementById('loadingOverlay').classList.remove('active');
                 if (data.success) displayResults(data);
-                else showError('Erro: ' + data.error);
+                else showError('Simulação falhou: ' + data.error);
             })
             .catch(err => {
                 document.getElementById('loadingOverlay').classList.remove('active');
-                showError('Erro: ' + err);
+                showError('Erro de rede: ' + err.message);
             });
         }
 
-        function displayResults(data) {
-            // Estatísticas
-            document.getElementById('statsContainer').style.display = 'block';
-            document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
-            document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
-            document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
-            document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
+function displayResults(data) {
+    // --- ESTATÍSTICAS ---
+    document.getElementById('statsContainer').style.display = 'block';
+    document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
+    document.getElementById('statPopulation').textContent = formatNumber(data.statistics.totalAffected);
+    document.getElementById('statTotal').textContent = formatNumber(data.statistics.totalItems);
+    document.getElementById('statRisk').textContent = data.statistics.avgRisk.toFixed(1) + '%';
 
-            // Mapa
-            if (currentLayer) map.removeLayer(currentLayer);
-            const geojson = JSON.parse(data.geojson);
-            currentLayer = L.geoJSON(geojson, { style: getMapStyle, onEachFeature: (f, l) => {
-                const p = f.properties;
-                l.bindPopup(`
-                    <div style="font-family:Poppins;min-width:220px;">
-                        <h3 style="margin:0 0 8px;color:var(--primary);border-bottom:2px solid var(--accent);padding-bottom:4px;">${p.name}</h3>
-                        <div style="font-size:0.9em;">
-                            <div style="display:flex;justify-content:space-between;margin:4px 0;">
-                                <span style="font-weight:600;color:#555;">Status:</span>
-                                <span class="status-badge ${p.flooded?'status-flooded':'status-safe'}">
-                                    ${p.flooded?'INUNDADA':'SEGURA'}
-                                </span>
-                            </div>
-                            <div style="display:flex;justify-content:space-between;margin:4px 0;">
-                                <span style="font-weight:600;color:#555;">Água:</span>
-                                <span style="color:var(--primary);font-weight:600;">${p.waterLevel.toFixed(2)}m</span>
-                            </div>
-                            <div style="display:flex;justify-content:space-between;margin:4px 0;">
-                                <span style="font-weight:600;color:#555;">População:</span>
-                                <span>${formatNumber(p.affectedPopulation)}</span>
-                            </div>
+    // --- MAPA ---
+    if (currentLayer) map.removeLayer(currentLayer);
+    const geojson = JSON.parse(data.geojson);
+    currentLayer = L.geoJSON(geojson, {
+        style: getMapStyle,
+        onEachFeature: (f, l) => {
+            const p = f.properties;
+            l.bindPopup(`
+                <div style="font-family:Poppins;min-width:220px;">
+                    <h3 style="margin:0 0 8px;color:var(--primary);border-bottom:2px solid var(--accent);padding-bottom:4px;">${p.name}</h3>
+                    <div style="font-size:0.9em;">
+                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
+                            <span style="font-weight:600;color:#555;">Status:</span>
+                            <span class="status-badge ${p.flooded?'status-flooded':'status-safe'}">
+                                ${p.flooded?'INUNDADA':'SEGURA'}
+                            </span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
+                            <span style="font-weight:600;color:#555;">Água:</span>
+                            <span style="color:var(--primary);font-weight:600;">${p.waterLevel.toFixed(2)}m</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin:4px 0;">
+                            <span style="font-weight:600;color:#555;">População:</span>
+                            <span>${formatNumber(p.affectedPopulation)}</span>
                         </div>
                     </div>
-                `);
-            }}).addTo(map);
-            map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
-
-            // RESULTADOS DETALHADOS
-            const items = geojson.features.map(f => f.properties);
-            const content = document.getElementById('resultsContent');
-            if (items.length === 0) {
-                content.innerHTML = '<p class="empty-state">Nenhum dado retornado.</p>';
-                return;
-            }
-
-            let tableHTML = `
-                <table class="results-table">
-                    <thead>
-                        <tr>
-                            <th>Nome</th>
-                            <th>Status</th>
-                            <th>Água (m)</th>
-                            <th>Pop. Afetada</th>
-                            <th>Risco</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            items.forEach(p => {
-                tableHTML += `
-                    <tr>
-                        <td><strong>${p.name}</strong></td>
-                        <td><span class="status-badge ${p.flooded?'status-flooded':'status-safe'}">
-                            ${p.flooded?'Inundado':'Seguro'}
-                        </span></td>
-                        <td class="water-level">${p.waterLevel.toFixed(2)}</td>
-                        <td>${formatNumber(p.affectedPopulation)}</td>
-                        <td>${p.severity || 'N/D'}</td>
-                    </tr>
-                `;
-            });
-
-            tableHTML += `</tbody></table>`;
-            content.innerHTML = tableHTML;
+                </div>
+            `);
         }
+    }).addTo(map);
+    map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
 
-        // Eventos
+    // --- RESULTADOS DETALHADOS (CARDS) ---
+    const items = geojson.features.map(f => f.properties).filter(p => p.flooded); // Só inundadas
+    const content = document.getElementById('resultsContent');
+    const title = document.getElementById('resultsTitle');
+
+    if (items.length === 0) {
+        title.textContent = '';
+        content.innerHTML = '<p class="empty-state">Nenhuma área inundada com os parâmetros atuais.</p>';
+        return;
+    }
+
+    // Determina o título com base no nível
+    const level = document.getElementById('level').value;
+    let areaName = 'Angola';
+    if (level === 'province' && document.getElementById('province').value !== 'all') {
+        areaName = document.getElementById('province').value;
+    } else if (level === 'municipality' && document.getElementById('municipality').value !== 'all') {
+        areaName = document.getElementById('municipality').value;
+    } else if (level === 'bairro' && document.getElementById('bairro').value !== 'all') {
+        areaName = document.getElementById('bairro').value;
+    }
+    title.textContent = `Resultados para ${areaName}`;
+
+    // Gera cards
+    let cardsHTML = '';
+    items.forEach(p => {
+        cardsHTML += `
+            <div class="result-card">
+                <div class="card-header">
+                    <h3>${p.name}</h3>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <span>Status:</span>
+                        <span class="status-badge status-fflooded">Inundada</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Nível de Água:</span>
+                        <strong class="water-level">${p.waterLevel.toFixed(2)} m</strong>
+                    </div>
+                    <div class="info-row">
+                        <span>População Afetada:</span>
+                        <strong>${formatNumber(p.affectedPopulation)}</strong>
+                    </div>
+                    <div class="info-row">
+                        <span>Dias de Recuperação:</span>
+                        <strong>${p.recoveryDays || 'N/D'} dias</strong>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    content.innerHTML = cardsHTML;
+}
+
+        // EVENTOS
         document.getElementById('level').addEventListener('change', function () {
             const v = this.value;
-            document.getElementById('municipality-group').style.display = v === 'province' ? 'none' : 'block';
-            document.getElementById('bairro-group').style.display = v === 'bairro' ? 'block' : 'none';
-            if (v !== 'province') loadMunicipalities(document.getElementById('province').value);
+            const munGroup = document.getElementById('municipality-group');
+            const bairroGroup = document.getElementById('bairro-group');
+
+            if (v === 'province') {
+                munGroup.style.display = bairroGroup.style.display = 'none';
+            } else if (v === 'municipality') {
+                munGroup.style.display = 'block';
+                bairroGroup.style.display = 'none';
+                loadMunicipalities(document.getElementById('province').value);
+            } else if (v === 'bairro') {
+                munGroup.style.display = bairroGroup.style.display = 'block';
+                loadMunicipalities(document.getElementById('province').value);
+            }
         });
+
         document.getElementById('province').addEventListener('change', e => loadMunicipalities(e.target.value));
         document.getElementById('municipality').addEventListener('change', e => loadBairros(e.target.value));
 
-        // Mobile
+        // Mobile menu
         document.getElementById('mobileToggle').addEventListener('click', () => {
             document.querySelector('.sidebar').classList.toggle('active');
         });
@@ -562,8 +672,11 @@
             }
         });
 
-        // Init
-        window.onload = () => { initMap(); loadProvinces(); };
+        // Inicialização
+        window.onload = () => {
+            initMap();
+            loadProvinces(); // Agora funciona!
+        };
     </script>
 </body>
 </html>

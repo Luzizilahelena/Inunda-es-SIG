@@ -931,7 +931,6 @@ def internal_error(error):
 if __name__ == '__main__':
     print("\n" + "="*70)
     print("API de Simulação de Inundações - Angola v3.1")
-    print("COM SISTEMA DE BAIRROS CORRIGIDO")
     print("="*70)
     print(f"Servidor: http://0.0.0.0:5000")
     print(f"Docs: http://localhost:5000/api/info")
