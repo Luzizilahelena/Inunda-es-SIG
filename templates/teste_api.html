@@ -395,7 +395,10 @@
     <!-- SCRIPT -->
     <script>
         let map = null, currentLayer = null;
-        const API_URL = 'https://inunda-es-sig.onrender.com';
+        // Detectar automaticamente o ambiente
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:5000' 
+            : 'https://inunda-es-sig.onrender.com';
 
         function initMap() {
             map = L.map('map').setView([-8.8383, 13.2344], 10);
@@ -588,6 +591,11 @@ function getMapStyle(feature) {
 
 // CORREÇÃO 3: Função displayResults com cálculo correto de taxa de risco
 function displayResults(data) {
+    // Mostrar loading no mapa
+    const mapContainer = document.getElementById('map');
+    const originalContent = mapContainer.innerHTML;
+    mapContainer.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;background:#f0f0f0;"><div class="spinner"></div></div>';
+    
     // --- ESTATÍSTICAS ---
     document.getElementById('statsContainer').style.display = 'block';
     document.getElementById('statFlooded').textContent = formatNumber(data.statistics.floodedCount);
@@ -678,6 +686,11 @@ function displayResults(data) {
     }).addTo(map);
     
     map.fitBounds(currentLayer.getBounds(), { padding: [50, 50] });
+    
+    // Remover loading quando mapa estiver pronto
+    map.whenReady(() => {
+        mapContainer.style.background = 'transparent';
+    });
 
     // --- RESULTADOS DETALHADOS ---
     const allAreas = geojson.features.map(f => f.properties);
