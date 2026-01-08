@@ -163,6 +163,26 @@ BAIRROS = {
         {'id': 609, 'name': 'Uíge', 'population': 95000, 'type': 'Residencial', 'risk': 'Alto'}
     ]
 }
+# ==================== FALLBACK COORDINATES ====================
+# Coordenadas de fallback por município quando geometria não é encontrada
+MUNICIPALITY_FALLBACK_COORDS = {
+    'Kilamba Kiaxi': [13.28, -8.92],
+    'Cacuaco': [13.37, -8.78],
+    'Viana': [13.38, -8.89],
+    'Luanda': [13.23, -8.84],
+    'Cazenga': [13.27, -8.87],
+    'Belas': [13.19, -8.95],
+    'Maianga': [13.24, -8.83],
+    'Rangel': [13.25, -8.82],
+    'Ingombota': [13.23, -8.81],
+    'Samba': [13.20, -8.86],
+    'Sambizanga': [13.22, -8.83],
+    'Talatona': [13.17, -8.89],
+    'Icolo e Bengo': [13.18, -8.98],
+    'Quiçama': [13.08, -9.10]
+}
+DEFAULT_FALLBACK_COORDS = [13.2437, -8.8383]  # Luanda centro
+
 # ==================== CACHES ====================
 GADM_CACHE = {}
 ELEVATION_CACHE = {}
@@ -178,7 +198,7 @@ def get_elevation_batch(coordinates):
       
         # Configurar retry
         session = requests.Session()
-        retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+        retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
         adapter = HTTPAdapter(max_retries=retry)
         session.mount('https://', adapter)
         
@@ -814,24 +834,7 @@ def simulate_flood():
                     logger.error(f"   Será usado um ponto de fallback que pode não ser preciso!")
                     
                     # Usar coordenadas específicas de fallback baseadas no município
-                    fallback_coords_map = {
-                        'Kilamba Kiaxi': [13.28, -8.92],
-                        'Cacuaco': [13.37, -8.78],
-                        'Viana': [13.38, -8.89],
-                        'Luanda': [13.23, -8.84],
-                        'Cazenga': [13.27, -8.87],
-                        'Belas': [13.19, -8.95],
-                        'Maianga': [13.24, -8.83],
-                        'Rangel': [13.25, -8.82],
-                        'Ingombota': [13.23, -8.81],
-                        'Samba': [13.20, -8.86],
-                        'Sambizanga': [13.22, -8.83],
-                        'Talatona': [13.17, -8.89],
-                        'Icolo e Bengo': [13.18, -8.98],
-                        'Quiçama': [13.08, -9.10]
-                    }
-                    
-                    fallback_coords = fallback_coords_map.get(municipality, [13.2437, -8.8383])
+                    fallback_coords = MUNICIPALITY_FALLBACK_COORDS.get(municipality, DEFAULT_FALLBACK_COORDS)
                     logger.info(f"   Usando coordenadas de fallback para {municipality}: {fallback_coords}")
               
                 # Calcular inundação com elevação

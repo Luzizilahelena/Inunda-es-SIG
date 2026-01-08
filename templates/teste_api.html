@@ -593,7 +593,6 @@ function getMapStyle(feature) {
 function displayResults(data) {
     // Mostrar loading no mapa
     const mapContainer = document.getElementById('map');
-    const originalContent = mapContainer.innerHTML;
     mapContainer.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;background:#f0f0f0;"><div class="spinner"></div></div>';
     
     // --- ESTATÍSTICAS ---
