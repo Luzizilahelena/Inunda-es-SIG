@@ -9,11 +9,27 @@ import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 import numpy as np
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
+import time
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+# Configurar logging baseado no ambiente
+if os.getenv('ENVIRONMENT') == 'production':
+    logging.basicConfig(level=logging.WARNING)
+else:
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
-CORS(app)
+
+# Configurar CORS explicitamente
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5000", "https://inunda-es-sig.onrender.com"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 # ==================== DADOS ESTÁTICOS ====================
 PROVINCES = [
     {'id': 1, 'name': 'Luanda', 'risk': 'Muito Alto', 'population': 8329517, 'area': 2417},
@@ -147,12 +163,32 @@ BAIRROS = {
         {'id': 609, 'name': 'Uíge', 'population': 95000, 'type': 'Residencial', 'risk': 'Alto'}
     ]
 }
+# ==================== FALLBACK COORDINATES ====================
+# Coordenadas de fallback por município quando geometria não é encontrada
+MUNICIPALITY_FALLBACK_COORDS = {
+    'Kilamba Kiaxi': [13.28, -8.92],
+    'Cacuaco': [13.37, -8.78],
+    'Viana': [13.38, -8.89],
+    'Luanda': [13.23, -8.84],
+    'Cazenga': [13.27, -8.87],
+    'Belas': [13.19, -8.95],
+    'Maianga': [13.24, -8.83],
+    'Rangel': [13.25, -8.82],
+    'Ingombota': [13.23, -8.81],
+    'Samba': [13.20, -8.86],
+    'Sambizanga': [13.22, -8.83],
+    'Talatona': [13.17, -8.89],
+    'Icolo e Bengo': [13.18, -8.98],
+    'Quiçama': [13.08, -9.10]
+}
+DEFAULT_FALLBACK_COORDS = [13.2437, -8.8383]  # Luanda centro
+
 # ==================== CACHES ====================
 GADM_CACHE = {}
 ELEVATION_CACHE = {}
 # ==================== FUNÇÕES DE ELEVAÇÃO ====================
 def get_elevation_batch(coordinates):
-    """Obtém elevação de múltiplos pontos"""
+    """Obtém elevação de múltiplos pontos com retry"""
     try:
         if len(coordinates) > 100:
             coordinates = coordinates[:100]
@@ -160,8 +196,14 @@ def get_elevation_batch(coordinates):
         locations = '|'.join([f"{lat},{lon}" for lat, lon in coordinates])
         url = f"https://api.open-elevation.com/api/v1/lookup?locations={locations}"
       
+        # Configurar retry
+        session = requests.Session()
+        retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('https://', adapter)
+        
         logger.info(f"Buscando elevação para {len(coordinates)} pontos...")
-        response = requests.get(url, timeout=30)
+        response = session.get(url, timeout=10)  # Reduzido para 10s
       
         if response.status_code == 200:
             data = response.json()
@@ -260,7 +302,9 @@ def get_region_elevation_stats(geometry):
             ELEVATION_CACHE[cache_key] = result
             return result
 
-        dem = np.array(elevations).reshape((grid_size, grid_size))
+        # Substituir None por valor padrão antes de criar array
+        elevations_cleaned = [e if e is not None else 0 for e in elevations]
+        dem = np.array(elevations_cleaned).reshape((grid_size, grid_size))
 
         # Calcular direção e acumulação de fluxo
         flow_dir = compute_flow_direction(dem)
@@ -676,11 +720,20 @@ def simulate_flood():
             return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
       
         level = data.get('level', 'province')
+        
+        # VALIDAÇÕES
+        if level not in ['province', 'municipality', 'bairro']:
+            return jsonify({'success': False, 'error': f'Nível inválido: {level}'}), 400
+        
         flood_rate = float(data.get('floodRate', 50)) / 100
+        if not (0 <= flood_rate <= 1):
+            return jsonify({'success': False, 'error': 'Taxa de inundação deve estar entre 0 e 100'}), 400
+        
         water_level = data.get('waterLevel')
-      
         if water_level is not None:
-            water_level_input = float(data.get('waterLevel', 50))
+            water_level_input = float(water_level)
+            if water_level_input < 0:
+                return jsonify({'success': False, 'error': 'Nível de água não pode ser negativo'}), 400
         else:
             water_level_input = None
       
@@ -774,6 +827,15 @@ def simulate_flood():
                             elevation_stats = get_region_elevation_stats(found_geom)
                             logger.info(f"Usando geometria do município - Elevação: {elevation_stats['avg']:.1f}m")
                             break
+                
+                # Se ainda não encontrou, usar fallback com coordenadas específicas
+                if found_geom is None:
+                    logger.error(f"⚠️ GEOMETRIA NÃO ENCONTRADA para bairro: {bairro_name} em {municipality}")
+                    logger.error(f"   Será usado um ponto de fallback que pode não ser preciso!")
+                    
+                    # Usar coordenadas específicas de fallback baseadas no município
+                    fallback_coords = MUNICIPALITY_FALLBACK_COORDS.get(municipality, DEFAULT_FALLBACK_COORDS)
+                    logger.info(f"   Usando coordenadas de fallback para {municipality}: {fallback_coords}")
               
                 # Calcular inundação com elevação
                 avg_elevation = elevation_stats['avg'] if elevation_stats else 400.0
