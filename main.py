@@ -327,6 +327,7 @@ def api_home():
             'provinces': '/api/provinces',
             'municipalities': '/api/municipalities',
             'districts': '/api/districts',
+            'bairros': '/api/bairros (alias for districts)',
             'simulate': '/api/simulate (POST)'
         }
     })
@@ -529,6 +530,12 @@ def get_districts():
         'timestamp': datetime.now().isoformat()
     })
 
+@app.route('/api/bairros', methods=['GET'])
+def get_bairros():
+    """ENDPOINT: Lista bairros (alias para districts para compatibilidade com frontend)"""
+    # Este endpoint é um alias para /api/districts para compatibilidade
+    return get_districts()
+
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
     try:
@@ -537,11 +544,16 @@ def simulate_flood():
             return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
 
         level = data.get('level', 'province')
+        # Normalize 'bairro' to 'district' for internal processing
+        if level == 'bairro':
+            level = 'district'
+        
         flood_rate = float(data.get('floodRate', 50)) / 100
         water_level_input = float(data.get('waterLevel', 50))
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
-        district = data.get('district', 'all')
+        # Accept both 'district' and 'bairro' parameter names
+        district = data.get('district', data.get('bairro', 'all'))
 
         logger.info(f"Simulação iniciada - Level: {level}, Rate: {flood_rate*100}%, WaterLevel: {water_level_input}m, Province: {province}, Municipality: {municipality}, District: {district}")
 

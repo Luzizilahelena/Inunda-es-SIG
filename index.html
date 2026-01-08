@@ -242,7 +242,7 @@
                     <select id="level">
                         <option value="province">Província</option>
                         <option value="municipality">Município</option>
-                        <option value="district">Distrito</option>
+                        <option value="bairro">Bairro</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -254,6 +254,12 @@
                 <div class="form-group" id="municipality-group" style="display: none;">
                     <label for="municipality">Município:</label>
                     <select id="municipality">
+                        <option value="all">Todos</option>
+                    </select>
+                </div>
+                <div class="form-group" id="bairro-group" style="display: none;">
+                    <label for="bairro">Bairro:</label>
+                    <select id="bairro">
                         <option value="all">Todos</option>
                     </select>
                 </div>
@@ -384,6 +390,42 @@
                     showError('Erro ao conectar com a API (municípios): ' + error.message);
                 });
         }
+        
+        function loadBairros(municipality, province) {
+            const bairroGroup = document.getElementById('bairro-group');
+            const bairroSelect = document.getElementById('bairro');
+            
+            if (municipality === 'all' || !municipality) {
+                bairroGroup.style.display = 'none';
+                bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                return;
+            }
+
+            fetch(`${url}/api/bairros?municipality=${encodeURIComponent(municipality)}&province=${encodeURIComponent(province)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        bairroSelect.innerHTML = '<option value="all">Todos</option>';
+                        data.data.forEach(bairro => {
+                            const option = document.createElement('option');
+                            option.value = bairro.name;
+                            option.textContent = bairro.name;
+                            bairroSelect.appendChild(option);
+                        });
+                        
+                        // Only show if level is 'bairro'
+                        const level = document.getElementById('level').value;
+                        if (level === 'bairro') {
+                            bairroGroup.style.display = 'block';
+                        }
+                    } else {
+                        showError('Erro ao carregar bairros: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    showError('Erro ao conectar com a API (bairros): ' + error.message);
+                });
+        }
         function showError(message) {
             const errorMessage = document.getElementById('errorMessage');
             errorMessage.textContent = message;
@@ -398,6 +440,7 @@
             const level = document.getElementById('level').value;
             const province = document.getElementById('province').value;
             const municipality = document.getElementById('municipality').value;
+            const bairro = document.getElementById('bairro').value;
             const floodRate = document.getElementById('floodRate').value;
             const waterLevelInput = document.getElementById('waterLevel').value.trim();
             if (parseFloat(floodRate) < 0 || parseFloat(floodRate) > 100) {
@@ -416,7 +459,8 @@
             const payload = {
                 level: level,
                 province: province,
-                municipality: (level === 'municipality' || level === 'district') ? municipality : 'all',
+                municipality: (['municipality', 'bairro'].includes(level)) ? municipality : 'all',
+                bairro: level === 'bairro' ? bairro : 'all',
                 floodRate: parseFloat(floodRate),
                 waterLevel: waterLevel
             };
@@ -520,8 +564,9 @@
                     `;
                 });
                 html += '</div></div>';
-            } else if (data.parameters.level === 'district' && data.parameters.municipality !== 'all') {
-                html += `<div class="result-group"><h3>Resultados para ${data.parameters.municipality} (${data.parameters.province})</h3><div class="results-grid">`;
+            } else if ((data.parameters.level === 'district' || data.parameters.level === 'bairro') && data.parameters.municipality !== 'all') {
+                const levelName = data.parameters.level === 'bairro' ? 'Bairros' : 'Distritos';
+                html += `<div class="result-group"><h3>${levelName} de ${data.parameters.municipality} (${data.parameters.province})</h3><div class="results-grid">`;
                 data.data.forEach(item => {
                     const icon = item.flooded ? '🚨' : '✅';
                     html += `
@@ -567,12 +612,59 @@
         document.getElementById('level').addEventListener('change', function() {
             const level = this.value;
             const municipalityGroup = document.getElementById('municipality-group');
-            municipalityGroup.style.display = (level === 'municipality' || level === 'district') ? 'block' : 'none';
+            const bairroGroup = document.getElementById('bairro-group');
+            
+            // Show/hide municipality group
+            municipalityGroup.style.display = (level === 'municipality' || level === 'bairro') ? 'block' : 'none';
+            
+            // Show/hide bairro group (only if municipality selected and level is bairro)
+            if (level === 'bairro') {
+                const municipality = document.getElementById('municipality').value;
+                const province = document.getElementById('province').value;
+                if (municipality && municipality !== 'all') {
+                    loadBairros(municipality, province);
+                    bairroGroup.style.display = 'block';
+                } else {
+                    bairroGroup.style.display = 'none';
+                }
+            } else {
+                bairroGroup.style.display = 'none';
+            }
+            
+            // Load municipalities if needed
+            if (level !== 'province') {
+                const province = document.getElementById('province').value;
+                if (province && province !== 'all') {
+                    loadMunicipalities(province);
+                }
+            }
         });
+        
         document.getElementById('province').addEventListener('change', function() {
             const province = this.value;
             loadMunicipalities(province);
+            
+            // Reset bairro dropdown when province changes
+            const bairroGroup = document.getElementById('bairro-group');
+            bairroGroup.style.display = 'none';
+            document.getElementById('bairro').innerHTML = '<option value="all">Todos</option>';
         });
+        
+        document.getElementById('municipality').addEventListener('change', function() {
+            const municipality = this.value;
+            const province = document.getElementById('province').value;
+            const level = document.getElementById('level').value;
+            
+            // Load bairros only if level is 'bairro' and municipality is selected
+            if (level === 'bairro' && municipality && municipality !== 'all') {
+                loadBairros(municipality, province);
+            } else {
+                const bairroGroup = document.getElementById('bairro-group');
+                bairroGroup.style.display = 'none';
+                document.getElementById('bairro').innerHTML = '<option value="all">Todos</option>';
+            }
+        });
+        
         window.onload = function() {
             loadProvinces();
         };
