@@ -36,6 +36,9 @@ MUNICIPALITIES = {
         {'id': 13, 'name': 'Samba', 'population': 400000, 'area': 345, 'risk': 'Alto'}, # De pesquisa
         {'id': 14, 'name': 'Sambizanga', 'population': 300000, 'area': 40, 'risk': 'Muito Alto'} # Estimado
     ],
+    'Bengo': [
+        {'id': 15, 'name': 'Ambriz', 'population': 120000, 'area': 300, 'risk': 'Médio'},
+    ]
 }
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
 BAIRROS = {
