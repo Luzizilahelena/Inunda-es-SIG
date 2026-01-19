@@ -1,34 +1,96 @@
-# Python 
+Simulador de Inundações – Angola
 
-Python is a high-level, interpreted programming language that has gained popularity in recent years due to its clear syntax and readability. It was first released in 1991 by Guido van Rossum, and is now maintained by the Python Software Foundation.
+Este projeto é um simulador de inundações desenvolvido em Python (Flask) com um frontend web interativo. Ele permite analisar riscos de inundação em diferentes províncias, municípios e bairros de Angola, utilizando dados geográficos, populacionais e estatísticas de elevação.
 
-One of the key features of Python is its readability and ease of use. Python's syntax is designed to be intuitive and easy to understand, making it a great language for beginners to learn. Additionally, its high-level, object-oriented design allows for the creation of clear and maintainable code, making it a popular choice for a wide range of applications.
+🚀 Funcionalidades
 
-Some of the key features of Python include:
+    API REST em Flask para simulação de inundações
 
-- Easy to Learn and Use
-- Interpreted Language
-- Cross-platform Compatibility
-- Large Standard Library
-- Dynamically Typed
-- Object-Oriented
-- High-level Language
-- Strong Support for Functional and Procedural Programming
-- Multipurpose
-- Large Community
+    Integração com Open-Elevation API para dados reais de altimetria
 
-# Template
+    Modelagem de risco considerando:
 
-**Name** : Python HTTP Server
+        Elevação média e mínima
 
-**Description** : Python is a high-level, interpreted programming language that has gained popularity in recent years due to its clear syntax and readability. It was first released in 1991 by Guido van Rossum, and is now maintained by the Python Software Foundation.
+        Acumulação de fluxo (hidrologia D8)
 
-# Errors/Feedback
+        Fatores de drenagem e risco pré-definidos
 
-If you found any error feel free to do any of these things : 
+    Endpoints para listar províncias, municípios e bairros
 
-- Comment on the template
-- DM me on Discord
-- Mail me at Hugoonreplit@gmail.com
+    Frontend web para visualização dos resultados e interação com os dados
 
-All errors/feedback is appreciated!
+🛠️ Tecnologias Utilizadas
+Backend
+
+    Python 3.x
+
+    Flask + Flask-CORS
+
+    GeoPandas
+
+    NumPy
+
+    Requests
+
+    Open-Elevation API
+
+Frontend
+
+    HTML, CSS, JavaScript
+
+    Consome os endpoints da API Flask
+
+    Interface para configurar parâmetros de simulação e visualizar resultados
+
+Instalação
+
+Clone este repositório e instale as dependências:
+bash
+    git clone https://github.com/Luzizilahelena/simulador-inundacoes.git
+    cd simulador-inundacoes
+    pip install -r requirements.txt
+
+Como Usar
+1. Iniciar o backend (API Flask)
+bash
+    python3 app.py
+A API estará disponível em:
+http://127.0.0.1:5000/api
+
+Acessar o frontend
+
+Abra o arquivo index.html na pasta frontend/ em seu navegador.
+O frontend se conecta automaticamente à API para buscar dados e rodar simulações.
+
+🔗 Endpoints Principais
+
+    /api → Informações gerais da API.
+
+    /api/provinces → Lista de províncias.
+
+    /api/municipalities?province=X → Lista de municípios.
+
+    /api/bairros?municipality=X → Lista de bairros.
+
+    /api/simulate (POST) → Simulação de inundação.
+Feedback
+
+Se encontrar algum erro ou tiver sugestões:
+
+    Abra uma issue aqui no GitHub
+
+    Entre em contato por e-mail: seuemail@exemplo.com
+    /api/elevation?lat=X&lon=Y → Dados de elevação.
+
+Contribuição
+
+Contribuições são bem-vindas!
+Você pode abrir uma issue ou enviar um pull request com melhorias.
+
+Feedback
+
+Se encontrar algum erro ou tiver sugestões:
+
+    * Abra uma issue aqui no GitHub
+    * Entre em contato por e-mail: luzizilahelena687@gmail.com
