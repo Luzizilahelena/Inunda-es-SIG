@@ -5,4 +5,13 @@ requests
 geopandas
 numpy
 
+Flask==3.0.0
+Flask-CORS==4.0.0
+requests==2.31.0
+geopandas==0.14.1
+shapely==2.0.2
+numpy==1.26.2
+PyMySQL==1.1.0
+cryptography==41.0.7
+
 #gunicorn é importante — é o servidor de produção que o Render usa para rodar Flask.
