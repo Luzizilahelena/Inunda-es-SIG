@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self):
         self.connection = None
+        self.connect()
     
     def connect(self):
         """Estabelece conexão com o banco"""
@@ -20,55 +21,64 @@ class Database:
                 database=DB_CONFIG['database'],
                 charset=DB_CONFIG['charset'],
                 cursorclass=DictCursor,
-                autocommit=False
+                autocommit=True
             )
             logger.info("✓ Conexão com MariaDB estabelecida")
-            return self.connection
         except pymysql.Error as e:
             logger.error(f"✗ Erro ao conectar ao MariaDB: {e}")
-            raise
+            self.connection = None
+            raise RuntimeError(f"Banco de dados indisponível: {e}")
     
-    def close(self):
-        """Fecha conexão com o banco"""
-        if self.connection:
-            self.connection.close()
-            logger.info("Conexão com MariaDB fechada")
+    def get_connection(self):
+        """Retorna conexão ativa"""
+        if not self.connection:
+            self.connect()
+        return self.connection
     
     def execute_query(self, query, params=None):
-        """Executa query SELECT e retorna resultados"""
+        """Executa SELECT e retorna resultados"""
+        conn = self.get_connection()
         try:
-            with self.connection.cursor() as cursor:
+            with conn.cursor() as cursor:
                 cursor.execute(query, params or ())
                 return cursor.fetchall()
         except pymysql.Error as e:
             logger.error(f"Erro ao executar query: {e}")
-            return None
+            return []
     
     def execute_update(self, query, params=None):
         """Executa INSERT/UPDATE/DELETE"""
+        conn = self.get_connection()
         try:
-            with self.connection.cursor() as cursor:
+            with conn.cursor() as cursor:
                 affected = cursor.execute(query, params or ())
-                self.connection.commit()
+                conn.commit()
                 return affected
         except pymysql.Error as e:
-            self.connection.rollback()
+            conn.rollback()
             logger.error(f"Erro ao executar update: {e}")
             return 0
     
     def execute_many(self, query, data_list):
         """Executa múltiplas inserções"""
+        conn = self.get_connection()
         try:
-            with self.connection.cursor() as cursor:
+            with conn.cursor() as cursor:
                 affected = cursor.executemany(query, data_list)
-                self.connection.commit()
+                conn.commit()
                 return affected
         except pymysql.Error as e:
-            self.connection.rollback()
+            conn.rollback()
             logger.error(f"Erro ao executar batch: {e}")
             return 0
+    
+    def close(self):
+        """Fecha conexão"""
+        if self.connection:
+            self.connection.close()
+            logger.info("Conexão fechada")
 
-# Funções auxiliares para acesso aos dados
+# ==================== FUNÇÕES AUXILIARES ====================
 
 def get_provinces(db):
     """Retorna todas as províncias"""
@@ -152,9 +162,12 @@ def save_simulation(db, simulation_data):
     
     db.execute_update(query, params)
     
-    with db.connection.cursor() as cursor:
+    # Retornar ID da simulação inserida
+    conn = db.get_connection()
+    with conn.cursor() as cursor:
         cursor.execute("SELECT LAST_INSERT_ID() as id")
-        return cursor.fetchone()['id']
+        result = cursor.fetchone()
+        return result['id'] if result else None
 
 def save_simulation_results(db, simulation_id, results):
     """Salva resultados detalhados da simulação"""

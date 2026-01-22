@@ -116,17 +116,19 @@ INSERT INTO municipalities (id, province_id, name, population, area, risk) VALUE
 (13, 1, 'Samba', 400000, 345.00, 'Alto'),
 (14, 1, 'Sambizanga', 300000, 40.00, 'Muito Alto');
 
--- Inserir bairros do Kilamba Kiaxi
+-- Inserir bairros de Belas
 INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
-(8, 'Golfe', 300000, 'Residencial', 'Alto'),
-(8, 'Palanca', 280000, 'Residencial', 'Alto'),
-(8, 'Kilamba', 450000, 'Residencial', 'Médio'),
-(8, 'Camama', 320000, 'Residencial', 'Alto'),
-(8, 'Sapu', 150000, 'Residencial', 'Alto'),
-(8, 'Nova Vida', 200000, 'Residencial', 'Médio'),
-(8, 'Bairro Popular', 250000, 'Residencial', 'Alto'),
-(8, 'Morro Bento', 220000, 'Residencial', 'Alto'),
-(8, 'Projecto Nova Vida', 150000, 'Residencial', 'Baixo');
+(1, 'Belas Sede', 180000, 'Residencial', 'Médio'),
+(1, 'Benfica', 140000, 'Residencial', 'Alto'),
+(1, 'Ramiros', 95000, 'Residencial', 'Baixo');
+
+-- Insirir bairros de Cacuaco
+INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
+(2, 'Kikolo', 180000, 'Residencial', 'Muito Alto'),
+(2, 'Sequele', 140000, 'Residencial', 'Alto'),
+(2, 'Funda', 160000, 'Residencial', 'Alto'),
+(2, 'Quiage', 95000, 'Residencial', 'Médio'),
+(2, 'Cabolombo', 110000, 'Residencial', 'Alto');
 
 -- Inserir bairros de Cazenga
 INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
@@ -146,19 +148,6 @@ INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
 (5, 'Alvalade', 120000, 'Residencial', 'Médio'),
 (5, 'Mutamba', 80000, 'Comercial', 'Alto');
 
--- Inserir bairros de Belas
-INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
-(1, 'Belas Sede', 180000, 'Residencial', 'Médio'),
-(1, 'Benfica', 140000, 'Residencial', 'Alto'),
-(1, 'Ramiros', 95000, 'Residencial', 'Baixo');
-
--- Insirir bairros de Cacuaco
-INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
-(2, 'Kikolo', 180000, 'Residencial', 'Muito Alto'),
-(2, 'Sequele', 140000, 'Residencial', 'Alto'),
-(2, 'Funda', 160000, 'Residencial', 'Alto'),
-(2, 'Quiage', 95000, 'Residencial', 'Médio'),
-(2, 'Cabolombo', 110000, 'Residencial', 'Alto');
 
 -- Inserir bairros de Viana
 INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
@@ -167,6 +156,18 @@ INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
 (7, 'Catete', 120000, 'Residencial', 'Médio'),
 (7, 'Kikuxi', 200000, 'Industrial', 'Alto'),
 (7, 'Zango', 350000, 'Residencial', 'Muito Alto');
+
+-- Inserir bairros do Kilamba Kiaxi
+INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
+(8, 'Golfe', 300000, 'Residencial', 'Alto'),
+(8, 'Palanca', 280000, 'Residencial', 'Alto'),
+(8, 'Kilamba', 450000, 'Residencial', 'Médio'),
+(8, 'Camama', 320000, 'Residencial', 'Alto'),
+(8, 'Sapu', 150000, 'Residencial', 'Alto'),
+(8, 'Nova Vida', 200000, 'Residencial', 'Médio'),
+(8, 'Bairro Popular', 250000, 'Residencial', 'Alto'),
+(8, 'Morro Bento', 220000, 'Residencial', 'Alto'),
+(8, 'Projecto Nova Vida', 150000, 'Residencial', 'Baixo');
 
 -- Inserir bairros de Maianga
 INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
@@ -232,6 +233,7 @@ INSERT INTO bairros (municipality_id, name, population, type, risk) VALUES
 (14, 'Boavista', 60000, 'Residencial', 'Baixo'),
 (14, 'EMCIB', 85000, 'Residencial', 'Médio'),
 (14, 'Uíge', 95000, 'Residencial', 'Alto');
+
 
 -- Verificar instalação
 SELECT 'Banco de dados configurado com sucesso!' as status;

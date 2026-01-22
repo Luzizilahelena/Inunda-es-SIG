@@ -1,5 +1,5 @@
-import os
-os.system("pip install -r requirements.txt")
+#import os
+#os.system("pip install -r requirements.txt")
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -848,3 +848,22 @@ def api_simulation_history():
     except Exception as e:
         logger.error(f"Erro ao buscar histórico: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("API de Simulação de Inundações - Angola v4.0 (MariaDB)")
+    print("=" * 70)
+
+    try:
+        provinces = get_provinces(db) or []
+        print(f"✓ Banco de Dados: MariaDB conectado")
+        print(f"✓ Províncias: {len(provinces)}")
+    except Exception as e:
+        print("✗ Erro ao conectar ao banco:", e)
+
+    print("Servidor: http://0.0.0.0:5000")
+    print("Docs: http://localhost:5000/api/info")
+    print("Status: http://localhost:5000/api/health")
+    print("=" * 70)
+
+    app.run(host="0.0.0.0", port=5000, debug=True)
