@@ -30,11 +30,11 @@ MUNICIPALITIES = {
         {'id': 8, 'name': 'Kilamba Kiaxi', 'population': 1800000, 'area': 189, 'risk': 'Muito Alto'},
         {'id': 9, 'name': 'Talatona', 'population': 500000, 'area': 160, 'risk': 'Médio'},
         # Adições novas: Tratando como municípios para o app
-        {'id': 10, 'name': 'Maianga', 'population': 500000, 'area': 50, 'risk': 'Alto'},  # Estimado
-        {'id': 11, 'name': 'Rangel', 'population': 261000, 'area': 62, 'risk': 'Muito Alto'},  # De pesquisa
-        {'id': 12, 'name': 'Ingombota', 'population': 370000, 'area': 30, 'risk': 'Médio'},  # Estimado
-        {'id': 13, 'name': 'Samba', 'population': 400000, 'area': 345, 'risk': 'Alto'},  # De pesquisa
-        {'id': 14, 'name': 'Sambizanga', 'population': 300000, 'area': 40, 'risk': 'Muito Alto'}  # Estimado
+        {'id': 10, 'name': 'Maianga', 'population': 500000, 'area': 50, 'risk': 'Alto'}, # Estimado
+        {'id': 11, 'name': 'Rangel', 'population': 261000, 'area': 62, 'risk': 'Muito Alto'}, # De pesquisa
+        {'id': 12, 'name': 'Ingombota', 'population': 370000, 'area': 30, 'risk': 'Médio'}, # Estimado
+        {'id': 13, 'name': 'Samba', 'population': 400000, 'area': 345, 'risk': 'Alto'}, # De pesquisa
+        {'id': 14, 'name': 'Sambizanga', 'population': 300000, 'area': 40, 'risk': 'Muito Alto'} # Estimado
     ],
 }
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
@@ -156,13 +156,13 @@ def get_elevation_batch(coordinates):
     try:
         if len(coordinates) > 100:
             coordinates = coordinates[:100]
-       
+      
         locations = '|'.join([f"{lat},{lon}" for lat, lon in coordinates])
         url = f"https://api.open-elevation.com/api/v1/lookup?locations={locations}"
-       
+      
         logger.info(f"Buscando elevação para {len(coordinates)} pontos...")
         response = requests.get(url, timeout=30)
-       
+      
         if response.status_code == 200:
             data = response.json()
             elevations = [result['elevation'] for result in data['results']]
@@ -174,113 +174,142 @@ def get_elevation_batch(coordinates):
     except Exception as e:
         logger.error(f"Erro ao obter elevações: {e}")
         return None
+
+def compute_flow_direction(dem):
+    """Calcula direção de fluxo D8 (single direction to steepest neighbor)."""
+    rows, cols = dem.shape
+    flow_dir = np.full((rows, cols), -1, dtype=int)  # -1 = no flow
+    drow = [-1, -1, -1,  0,  0,  1,  1,  1]
+    dcol = [-1,  0,  1, -1,  1, -1,  0,  1]
+    dists = [np.sqrt(2), 1, np.sqrt(2), 1, 1, np.sqrt(2), 1, np.sqrt(2)]
+
+    for i in range(rows):
+        for j in range(cols):
+            max_slope = -np.inf
+            best_k = -1
+            for k in range(8):
+                ni, nj = i + drow[k], j + dcol[k]
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    slope = (dem[i, j] - dem[ni, nj]) / dists[k]
+                    if slope > max_slope:
+                        max_slope = slope
+                        best_k = k
+            if best_k >= 0:
+                flow_dir[i, j] = best_k
+    return flow_dir
+
+def compute_flow_accumulation(dem, flow_dir):
+    """Calcula acumulação de fluxo baseada em D8."""
+    rows, cols = dem.shape
+    accum = np.ones((rows, cols))  # Cada célula começa com 1 (própria contribuição)
+    drow = [-1, -1, -1,  0,  0,  1,  1,  1]
+    dcol = [-1,  0,  1, -1,  1, -1,  0,  1]
+
+    # Ordenar células por elevação descendente
+    flat_indices = np.argsort(dem.ravel())[::-1]
+    for flat_idx in flat_indices:
+        i, j = divmod(flat_idx, cols)
+        dir_k = flow_dir[i, j]
+        if dir_k >= 0:
+            ni, nj = i + drow[dir_k], j + dcol[dir_k]
+            if 0 <= ni < rows and 0 <= nj < cols:
+                accum[ni, nj] += accum[i, j]
+    return accum
+
 def get_region_elevation_stats(geometry):
-    """Calcula estatísticas de elevação para uma região"""
+    """Calcula estatísticas de elevação e acumulação de fluxo para uma região."""
     try:
         cache_key = f"{geometry.centroid.y:.4f},{geometry.centroid.x:.4f}"
         if cache_key in ELEVATION_CACHE:
             logger.info(f"Usando elevação do cache")
             return ELEVATION_CACHE[cache_key]
-       
-        bounds = geometry.bounds
-        centroid = geometry.centroid
-       
+
+        bounds = geometry.bounds  # minx (lon min), miny (lat min), maxx (lon max), maxy (lat max)
         area = geometry.area
+
+        # Definir tamanho do grid baseado na área (ex: maior área = maior grid)
         if area > 1.0:
-            num_points = 9
+            grid_size = 15  # 15x15 = 225 pontos (pode chamar batch múltiplas vezes se >100)
         elif area > 0.1:
-            num_points = 5
+            grid_size = 10  # 10x10 = 100 pontos
         else:
-            num_points = 3
-       
-        points = [(centroid.y, centroid.x)]
-       
-        if num_points >= 5:
-            points.extend([
-                (bounds[1], bounds[0]),
-                (bounds[3], bounds[2]),
-                (bounds[1], bounds[2]),
-                (bounds[3], bounds[0]),
-            ])
-       
-        if num_points >= 9:
-            mid_lat = (bounds[1] + bounds[3]) / 2
-            mid_lon = (bounds[0] + bounds[2]) / 2
-            points.extend([
-                (mid_lat, bounds[0]),
-                (mid_lat, bounds[2]),
-                (bounds[1], mid_lon),
-                (bounds[3], mid_lon),
-            ])
-       
-        elevations = get_elevation_batch(points)
-       
-        if elevations and len(elevations) > 0:
-            valid_elevations = [e for e in elevations if e is not None and e >= 0]
-           
-            if valid_elevations:
-                avg = np.mean(valid_elevations)
-                min_elev = np.min(valid_elevations)
-                max_elev = np.max(valid_elevations)
-                elevation_range = max_elev - min_elev
-               
-                result = {
-                    'avg': float(avg),
-                    'min': float(min_elev),
-                    'max': float(max_elev),
-                    'range': float(elevation_range),
-                    'points_sampled': len(valid_elevations)
-                }
-               
-                ELEVATION_CACHE[cache_key] = result
-               
-                logger.info(f"Elevação - Média: {avg:.1f}m, Min: {min_elev:.1f}m, Max: {max_elev:.1f}m")
-                return result
-       
-        logger.warning(f"Usando elevação estimada (fallback)")
+            grid_size = 5   # 5x5 = 25 pontos
+
+        lons = np.linspace(bounds[0], bounds[2], grid_size)
+        lats = np.linspace(bounds[1], bounds[3], grid_size)
+        coordinates = [(lat, lon) for lat in lats for lon in lons]
+
+        # Obter elevações (em batches se >100)
+        elevations = []
+        batch_size = 100
+        for i in range(0, len(coordinates), batch_size):
+            batch = coordinates[i:i+batch_size]
+            batch_elev = get_elevation_batch(batch)
+            if batch_elev:
+                elevations.extend(batch_elev)
+            else:
+                elevations.extend([None] * len(batch))
+
+        if len(elevations) != grid_size ** 2:
+            raise ValueError("Erro ao obter elevações para o grid")
+
+        valid_elevations = [e for e in elevations if e is not None and e >= 0]
+        if not valid_elevations:
+            logger.warning("Nenhuma elevação válida, usando fallback")
+            result = {'avg': 400.0, 'min': 200.0, 'max': 600.0, 'range': 400.0, 'accum_max': 1.0, 'points_sampled': 0}
+            ELEVATION_CACHE[cache_key] = result
+            return result
+
+        dem = np.array(elevations).reshape((grid_size, grid_size))
+
+        # Calcular direção e acumulação de fluxo
+        flow_dir = compute_flow_direction(dem)
+        accum = compute_flow_accumulation(dem, flow_dir)
+
+        avg = np.mean(valid_elevations)
+        min_elev = np.min(valid_elevations)
+        max_elev = np.max(valid_elevations)
+        elevation_range = max_elev - min_elev
+        accum_max = float(np.max(accum))  # Máxima acumulação (indica áreas de concentração de fluxo)
+
         result = {
-            'avg': 400.0,
-            'min': 200.0,
-            'max': 600.0,
-            'range': 400.0,
-            'points_sampled': 0
+            'avg': float(avg),
+            'min': float(min_elev),
+            'max': float(max_elev),
+            'range': float(elevation_range),
+            'accum_max': accum_max,  # Novo: máxima acumulação de fluxo
+            'points_sampled': len(valid_elevations)
         }
         ELEVATION_CACHE[cache_key] = result
+        logger.info(f"Elevação - Média: {avg:.1f}m, Accum Max: {accum_max:.1f}")
         return result
-       
     except Exception as e:
-        logger.error(f"Erro ao calcular elevação: {e}")
-        return {
-            'avg': 400.0,
-            'min': 200.0,
-            'max': 600.0,
-            'range': 400.0,
-            'points_sampled': 0
-        }
+        logger.error(f"Erro ao calcular elevação/acumulação: {e}")
+        return {'avg': 400.0, 'min': 200.0, 'max': 600.0, 'range': 400.0, 'accum_max': 1.0, 'points_sampled': 0}
 # ==================== GADM ====================
 def download_and_read_gadm_json(country_code, level):
     cache_key = f"{country_code}_{level}"
-   
+  
     if cache_key in GADM_CACHE:
         logger.info(f"Usando dados GADM do cache: Level {level}")
         return GADM_CACHE[cache_key]
-   
+  
     json_url = f'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_{country_code}_{level}.json.zip'
     logger.info(f"⬇Baixando GeoJSON: {json_url}...")
-   
+  
     try:
         response = requests.get(json_url, timeout=60)
         response.raise_for_status()
-       
+      
         with ZipFile(BytesIO(response.content)) as zip_file:
             json_filename = zip_file.namelist()[0]
             with zip_file.open(json_filename) as json_file:
                 gdf = gpd.read_file(json_file, driver='GeoJSON')
-       
+      
         GADM_CACHE[cache_key] = gdf
         logger.info(f"Dados GADM Level {level} armazenados em cache ({len(gdf)} features)")
         return gdf
-       
+      
     except Exception as e:
         logger.error(f"Erro ao baixar/processar GeoJSON: {e}")
         return None
@@ -293,33 +322,24 @@ def normalize_name(name):
     return name
 # ==================== CÁLCULO ====================
 def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevation=0, elevation_stats=None):
-    """Calcula inundação considerando elevação"""
-    risk_factors = {
-        'Muito Alto': 0.35,
-        'Alto': 0.20,
-        'Médio': 0.05,
-        'Baixo': -0.10
-    }
-   
-    drainage_factor = {
-        'Muito Alto': 0.9,
-        'Alto': 0.7,
-        'Médio': 0.5,
-        'Baixo': 0.3
-    }
-   
+    """Calcula inundação considerando elevação e acumulação de fluxo."""
+    risk_factors = {'Muito Alto': 0.35, 'Alto': 0.20, 'Médio': 0.05, 'Baixo': -0.10}
+    drainage_factor = {'Muito Alto': 0.9, 'Alto': 0.7, 'Médio': 0.5, 'Baixo': 0.3}
+
     risk_modifier = risk_factors.get(risk_level, 0)
     drainage = drainage_factor.get(risk_level, 0.5)
-   
+
     if elevation_stats:
         avg_elevation = elevation_stats.get('avg', area_elevation)
         elevation_range = elevation_stats.get('range', 0)
         min_elevation = elevation_stats.get('min', area_elevation)
+        accum_max = elevation_stats.get('accum_max', 1.0)  # Novo fator
     else:
         avg_elevation = area_elevation
         elevation_range = 0
         min_elevation = area_elevation
-   
+        accum_max = 1.0
+
     if avg_elevation < 50:
         elevation_risk = 0.40
     elif avg_elevation < 200:
@@ -330,7 +350,7 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
         elevation_risk = 0.05
     else:
         elevation_risk = -0.10
-   
+  
     if elevation_range > 300:
         terrain_risk = 0.25
     elif elevation_range > 150:
@@ -339,10 +359,13 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
         terrain_risk = 0.08
     else:
         terrain_risk = 0.0
-   
-    adjusted_probability = flood_rate + risk_modifier + elevation_risk + terrain_risk
+
+    # Novo: Fator de risco baseado em acumulação de fluxo (zonas montanhosas aumentam fluxo para baixas)
+    accum_risk = min(0.3, 0.1 * np.log(accum_max + 1))  # Log para normalizar, max 0.3
+
+    adjusted_probability = flood_rate + risk_modifier + elevation_risk + terrain_risk + accum_risk
     adjusted_probability = max(0, min(1, adjusted_probability))
-   
+  
     if water_level_input and water_level_input > 0:
         base_water = water_level_input
         elevation_multiplier = max(0.5, (1000 - avg_elevation) / 1000)
@@ -352,16 +375,16 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
             base_water = 10.0 * (adjusted_probability - 0.5) / 0.5
         else:
             base_water = 5.0 * adjusted_probability / 0.5
-       
+      
         elevation_multiplier = max(0.5, (1000 - avg_elevation) / 1000)
         effective_water_level = base_water * drainage * adjusted_probability * elevation_multiplier
-   
+  
     flood_threshold = max(2.0, min_elevation / 100)
     is_flooded = effective_water_level > flood_threshold
-   
+  
     if is_flooded:
         water_level = effective_water_level
-       
+      
         if water_level < 8.0 and avg_elevation > 100:
             severity = 'Leve'
             recovery_days = int(7 + water_level * 0.5)
@@ -374,10 +397,10 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
         else:
             severity = 'Crítica'
             recovery_days = int(60 + water_level * 2.0)
-       
+      
         if avg_elevation < 50:
             recovery_days = int(recovery_days * 1.5)
-       
+      
         return True, water_level, severity, recovery_days
     else:
         return False, 0, 'Nenhuma', 0
@@ -432,23 +455,23 @@ def api_info():
 def get_provinces():
     logger.info("Listando províncias")
     gdf = download_and_read_gadm_json('AGO', 1)
-   
+  
     if gdf is None:
         return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-   
+  
     provinces = []
     for index, row in gdf.iterrows():
         name = row['NAME_1']
         static = next((p for p in PROVINCES if p['name'] == name), None)
-       
-        if static:  # Só adicionar se existir em PROVINCES (apenas Luanda)
+      
+        if static: # Só adicionar se existir em PROVINCES (apenas Luanda)
             pop = static['population']
             area = static['area']
             risk = static['risk']
             id_ = static['id']
-           
+          
             centroid = row['geometry'].centroid
-           
+          
             provinces.append({
                 'id': id_,
                 'name': name,
@@ -458,7 +481,7 @@ def get_provinces():
                 'lat': centroid.y,
                 'lon': centroid.x
             })
-   
+  
     return jsonify({
         'success': True,
         'data': provinces,
@@ -469,13 +492,10 @@ def get_provinces():
 def get_municipalities():
     province = request.args.get('province', 'Luanda')
     logger.info(f"Listando municípios para: {province}")
-
     if province != 'Luanda':
         return jsonify({'success': True, 'data': [], 'count': 0})
-
     # === DADOS ESTÁTICOS (sempre disponíveis) ===
     static_muns = MUNICIPALITIES.get('Luanda', [])
-
     # === BAIXAR GADM (para geometria) ===
     gdf = download_and_read_gadm_json('AGO', 2)
     if gdf is None:
@@ -493,10 +513,8 @@ def get_municipalities():
             } for m in static_muns
         ]
         return jsonify({'success': True, 'data': municipalities, 'count': len(municipalities)})
-
     gdf = gdf[gdf['NAME_1'] == 'Luanda']
     municipalities = []
-
     # === MAPEAR NOMES DO GADM PARA SEUS DADOS ESTÁTICOS ===
     gadm_to_static = {
         'Belas': 'Belas',
@@ -506,7 +524,7 @@ def get_municipalities():
         'Luanda': 'Luanda',
         'Quiçama': 'Quiçama',
         'Viana': 'Viana',
-        'Kilamba-Kiaxi': 'Kilamba Kiaxi',   # <--- AQUI ESTÁ A CORREÇÃO!
+        'Kilamba-Kiaxi': 'Kilamba Kiaxi', # <--- AQUI ESTÁ A CORREÇÃO!
         'Talatona': 'Talatona',
         'Maianga': 'Maianga',
         'Rangel': 'Rangel',
@@ -514,18 +532,16 @@ def get_municipalities():
         'Samba': 'Samba',
         'Sambizanga': 'Sambizanga'
     }
-
     for _, row in gdf.iterrows():
         gadm_name = row['NAME_2']
         static_name = gadm_to_static.get(gadm_name)
-
         if static_name:
             static_mun = next((m for m in static_muns if m['name'] == static_name), None)
             if static_mun:
                 centroid = row['geometry'].centroid
                 municipalities.append({
                     'id': static_mun['id'],
-                    'name': static_name,  # Usa o nome do seu sistema
+                    'name': static_name, # Usa o nome do seu sistema
                     'province': 'Luanda',
                     'risk': static_mun['risk'],
                     'population': static_mun['population'],
@@ -533,7 +549,6 @@ def get_municipalities():
                     'lat': centroid.y,
                     'lon': centroid.x
                 })
-
     # === GARANTIR QUE KILAMBA KIAXI APAREÇA (fallback) ===
     if not any(m['name'] == 'Kilamba Kiaxi' for m in municipalities):
         municipalities.append({
@@ -546,22 +561,20 @@ def get_municipalities():
             'lat': -8.92,
             'lon': 13.28
         })
-
     return jsonify({
         'success': True,
         'data': municipalities,
         'count': len(municipalities),
         'timestamp': datetime.now().isoformat()
     })
-
 @app.route('/api/bairros', methods=['GET'])
 def get_bairros():
     """ENDPOINT: Lista bairros de um município específico"""
     municipality = request.args.get('municipality', None)
     province = request.args.get('province', None)
-   
+  
     logger.info(f"Listando BAIRROS - Município: {municipality}, Província: {province}")
-   
+  
     if not municipality or municipality == 'all':
         # Retornar todos os bairros de Luanda
         all_bairros = []
@@ -569,14 +582,14 @@ def get_bairros():
             for bairro in bairros_list:
                 bairro_data = {**bairro, 'municipality': munic_name}
                 all_bairros.append(bairro_data)
-       
+      
         return jsonify({
             'success': True,
             'data': all_bairros,
             'count': len(all_bairros),
             'timestamp': datetime.now().isoformat()
         })
-   
+  
     # Normalizar municipality para matching
     normalized_municipality = normalize_name(municipality)
     matching_key = None
@@ -584,7 +597,7 @@ def get_bairros():
         if normalize_name(key) == normalized_municipality:
             matching_key = key
             break
-   
+  
     if not matching_key:
         logger.warning(f"Nenhum bairro encontrado para município: {municipality}")
         return jsonify({
@@ -594,9 +607,9 @@ def get_bairros():
             'message': f'Nenhum bairro cadastrado para o município {municipality}',
             'timestamp': datetime.now().isoformat()
         })
-   
+  
     bairros_list = BAIRROS.get(matching_key, [])
-   
+  
     # Filtrar bairro específico se foi selecionado
     bairro = request.args.get('bairro', 'all')
     if bairro and bairro != 'all':
@@ -606,7 +619,7 @@ def get_bairros():
                 'success': False,
                 'error': f'Bairro {bairro} não encontrado em {municipality}'
             }), 404
-   
+  
     # Adicionar informação do município a cada bairro
     bairros_with_municipality = []
     for bairro in bairros_list:
@@ -614,9 +627,9 @@ def get_bairros():
         if province:
             bairro_data['province'] = province
         bairros_with_municipality.append(bairro_data)
-   
+  
     logger.info(f"Encontrados {len(bairros_with_municipality)} bairros em {municipality}")
-   
+  
     return jsonify({
         'success': True,
         'data': bairros_with_municipality,
@@ -633,9 +646,9 @@ def get_elevation():
     try:
         lat = float(request.args.get('lat'))
         lon = float(request.args.get('lon'))
-       
+      
         elevations = get_elevation_batch([(lat, lon)])
-       
+      
         if elevations and len(elevations) > 0:
             return jsonify({
                 'success': True,
@@ -655,39 +668,38 @@ def get_elevation():
             'error': str(e)
         }), 400
 # CORREÇÃO: Substitua a rota /api/simulate no seu app.py
-
 @app.route('/api/simulate', methods=['POST'])
 def simulate_flood():
     try:
         data = request.get_json()
         if not data:
             return jsonify({'success': False, 'error': 'Dados não fornecidos'}), 400
-       
+      
         level = data.get('level', 'province')
         flood_rate = float(data.get('floodRate', 50)) / 100
         water_level = data.get('waterLevel')
-       
+      
         if water_level is not None:
             water_level_input = float(data.get('waterLevel', 50))
         else:
             water_level_input = None
-       
+      
         province = data.get('province', 'all')
         municipality = data.get('municipality', 'all')
         bairro = data.get('bairro', 'all')
-       
+      
         logger.info(f"Simulação - Level: {level}, Province: {province}, Municipality: {municipality}, Bairro: {bairro}")
-       
+      
         # ========== SIMULAÇÃO DE BAIRROS ==========
         if level == 'bairro':
             logger.info(f"SIMULAÇÃO DE BAIRROS INICIADA")
-           
+          
             if municipality == 'all' or not municipality:
                 return jsonify({
                     'success': False,
                     'error': 'Para simular bairros, você deve selecionar um município específico'
                 }), 400
-           
+          
             # Normalizar para encontrar chave em BAIRROS
             normalized_municipality = normalize_name(municipality)
             matching_key = None
@@ -695,15 +707,15 @@ def simulate_flood():
                 if normalize_name(key) == normalized_municipality:
                     matching_key = key
                     break
-           
+          
             if not matching_key:
                 return jsonify({
                     'success': False,
                     'error': f'Nenhum bairro cadastrado para o município {municipality}'
                 }), 404
-           
+          
             bairros_list = BAIRROS.get(matching_key, [])
-           
+          
             # *** CORREÇÃO AQUI: Filtrar bairro específico ***
             if bairro and bairro != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro]
@@ -715,57 +727,57 @@ def simulate_flood():
                 logger.info(f"Simulando APENAS o bairro: {bairro}")
             else:
                 logger.info(f"Simulando TODOS os {len(bairros_list)} bairros de {municipality}")
-           
+          
             # Buscar geometria do município para usar como referência
             gdf_level2 = download_and_read_gadm_json('AGO', 2)
             gdf_level3 = download_and_read_gadm_json('AGO', 3)
-           
+          
             results = []
             features = []
-           
+          
             for bairro_data in bairros_list:
                 risk = bairro_data['risk']
                 pop = bairro_data['population']
                 bairro_name = bairro_data['name']
-               
+              
                 logger.info(f"Processando bairro: {bairro_name}")
-               
+              
                 # Buscar geometria no GADM Level 3 (comunas)
                 found_geom = None
                 elevation_stats = None
-               
+              
                 if gdf_level3 is not None:
                     municipality_normalized = normalize_name(municipality)
                     bairro_normalized = normalize_name(bairro_name)
-                   
+                  
                     # Filtrar por município
                     gdf_filtered = gdf_level3[gdf_level3['NAME_2'].apply(normalize_name) == municipality_normalized]
-                   
+                  
                     # Buscar bairro específico
                     for idx, row in gdf_filtered.iterrows():
                         commune_normalized = normalize_name(row['NAME_3'])
-                       
+                      
                         if commune_normalized == bairro_normalized or bairro_normalized in commune_normalized:
                             found_geom = row['geometry']
                             elevation_stats = get_region_elevation_stats(found_geom)
                             logger.info(f"Geometria encontrada para {bairro_name} - Elevação: {elevation_stats['avg']:.1f}m")
                             break
-               
+              
                 # Se não encontrou no Level 3, usar geometria do município
                 if found_geom is None and gdf_level2 is not None:
                     logger.warning(f"Geometria específica não encontrada para {bairro_name}, usando município")
                     municipality_normalized = normalize_name(municipality)
-                   
+                  
                     for idx, row in gdf_level2.iterrows():
                         if normalize_name(row['NAME_2']) == municipality_normalized:
                             found_geom = row['geometry']
                             elevation_stats = get_region_elevation_stats(found_geom)
                             logger.info(f"Usando geometria do município - Elevação: {elevation_stats['avg']:.1f}m")
                             break
-               
+              
                 # Calcular inundação com elevação
                 avg_elevation = elevation_stats['avg'] if elevation_stats else 400.0
-               
+              
                 is_flooded, water_level_calc, severity, recovery_days = calculate_flood_risk(
                     risk,
                     flood_rate,
@@ -773,12 +785,12 @@ def simulate_flood():
                     avg_elevation,
                     elevation_stats
                 )
-               
+              
                 affected_population = 0
                 if is_flooded:
                     impact_factor = min(water_level_calc / 20.0, 0.7)
                     affected_population = int(pop * impact_factor)
-               
+              
                 result_data = {
                     'name': bairro_name,
                     'municipality': municipality,
@@ -795,14 +807,14 @@ def simulate_flood():
                     'elevation_min': round(elevation_stats['min'], 1) if elevation_stats else None,
                     'elevation_max': round(elevation_stats['max'], 1) if elevation_stats else None
                 }
-               
+              
                 results.append(result_data)
-               
+              
                 # Criar feature GeoJSON
                 if found_geom is not None:
                     import json
                     geom_json = json.loads(gpd.GeoSeries([found_geom]).to_json())['features'][0]['geometry']
-                   
+                  
                     features.append({
                         'type': 'Feature',
                         'geometry': geom_json,
@@ -811,7 +823,7 @@ def simulate_flood():
                 else:
                     # Fallback: usar ponto central do município
                     fallback_coords = [13.2437, -8.8383]
-                   
+                  
                     features.append({
                         'type': 'Feature',
                         'geometry': {
@@ -820,18 +832,18 @@ def simulate_flood():
                         },
                         'properties': result_data
                     })
-           
+          
             flooded_count = sum(1 for r in results if r['flooded'])
             total_affected = sum(r['affectedPopulation'] for r in results)
-           
+          
             geojson_data = {
                 'type': 'FeatureCollection',
                 'features': features
             }
-           
+          
             import json
             geojson = json.dumps(geojson_data)
-           
+          
             response = {
                 'success': True,
                 'data': results,
@@ -852,30 +864,30 @@ def simulate_flood():
                 },
                 'timestamp': datetime.now().isoformat()
             }
-           
+          
             logger.info(f"Simulação de bairros concluída - {flooded_count} de {len(results)} bairros inundados")
             return jsonify(response)
-       
+      
         # ========== SIMULAÇÃO DE PROVÍNCIAS E MUNICÍPIOS (mantém igual) ==========
         level_map = {'province': 1, 'municipality': 2}
         level_num = level_map.get(level)
-       
+      
         if level_num is None:
             return jsonify({'success': False, 'error': 'Nível inválido. Use: province, municipality ou bairro'}), 400
-       
+      
         gdf = download_and_read_gadm_json('AGO', level_num)
         if gdf is None:
             return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
-       
+      
         if province != 'all' and province != 'Luanda':
             return jsonify({'success': True, 'data': [], 'count': 0, 'message': 'Apenas Luanda disponível'})
-       
+      
         if province != 'all':
             gdf = gdf[gdf['NAME_1'] == province]
-       
+      
         if level == 'municipality' and municipality != 'all':
             gdf = gdf[gdf['NAME_2'] == municipality]
-       
+      
         gdf['name'] = gdf[f'NAME_{level_num}']
         gdf['flooded'] = False
         gdf['waterLevel'] = 0.0
@@ -883,28 +895,28 @@ def simulate_flood():
         gdf['recoveryDays'] = 0
         gdf['affectedPopulation'] = 0
         gdf['elevation'] = 0.0
-       
+      
         logger.info(f"Processando {len(gdf)} regiões...")
-       
+      
         for i, row in gdf.iterrows():
             prov = row['NAME_1']
             name = row[f'NAME_{level_num}']
             geometry = row['geometry']
-           
+          
             elevation_stats = get_region_elevation_stats(geometry)
             avg_elevation = elevation_stats['avg']
-           
+          
             if level == 'province':
                 static = next((p for p in PROVINCES if p['name'] == name), None)
             else:
                 static = next((m for m in MUNICIPALITIES.get(prov, []) if m['name'] == name), None)
-           
+          
             if static:
                 risk = static['risk']
                 pop = static['population']
             else:
                 continue
-           
+          
             is_flooded, water_level_calc, severity, recovery_days = calculate_flood_risk(
                 risk,
                 flood_rate,
@@ -912,29 +924,29 @@ def simulate_flood():
                 avg_elevation,
                 elevation_stats
             )
-           
+          
             affected_population = 0
             if is_flooded:
                 impact_factor = min(water_level_calc / 20.0, 0.5)
                 affected_population = int(pop * impact_factor)
-           
+          
             gdf.at[i, 'flooded'] = is_flooded
             gdf.at[i, 'waterLevel'] = water_level_calc
             gdf.at[i, 'severity'] = severity
             gdf.at[i, 'recoveryDays'] = recovery_days
             gdf.at[i, 'affectedPopulation'] = affected_population
             gdf.at[i, 'elevation'] = round(avg_elevation, 1)
-       
+      
         gdf_copy = gdf.copy()
         gdf_copy['lat'] = gdf.geometry.centroid.y
         gdf_copy['lon'] = gdf.geometry.centroid.x
         results = gdf_copy.drop(columns=['geometry']).to_dict('records')
-       
+      
         geojson = gdf.to_json()
-       
+      
         flooded_count = len(gdf[gdf['flooded']])
         total_affected = sum(item['affectedPopulation'] for item in results)
-       
+      
         response = {
             'success': True,
             'data': results,
@@ -954,10 +966,10 @@ def simulate_flood():
             },
             'timestamp': datetime.now().isoformat()
         }
-       
+      
         logger.info(f"Simulação concluída - {flooded_count} de {len(results)} áreas inundadas")
         return jsonify(response)
-       
+      
     except Exception as e:
         logger.error(f"Erro na simulação: {str(e)}")
         import traceback
@@ -981,5 +993,5 @@ if __name__ == '__main__':
     print(f"Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
     print(f"Bairros: {sum(len(b) for b in BAIRROS.values())}")
     print("="*70 + "\n")
-   
+  
     app.run(debug=True, host='0.0.0.0', port=5000)
