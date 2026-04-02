@@ -14,10 +14,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
+
 # ==================== DADOS ESTÁTICOS ====================
 PROVINCES = [
     {'id': 1, 'name': 'Luanda', 'risk': 'Muito Alto', 'population': 8329517, 'area': 2417},
 ]
+
 MUNICIPALITIES = {
     'Luanda': [
         {'id': 1, 'name': 'Belas', 'population': 600000, 'area': 500, 'risk': 'Alto'},
@@ -37,6 +39,7 @@ MUNICIPALITIES = {
         {'id': 14, 'name': 'Sambizanga', 'population': 300000, 'area': 40, 'risk': 'Muito Alto'}  # Estimado
     ],
 }
+
 # BAIRROS organizados por MUNICÍPIO (adicionadas novas keys com bairros pesquisados)
 BAIRROS = {
     'Kilamba Kiaxi': [
@@ -147,9 +150,11 @@ BAIRROS = {
         {'id': 609, 'name': 'Uíge', 'population': 95000, 'type': 'Residencial', 'risk': 'Alto'}
     ]
 }
+
 # ==================== CACHES ====================
 GADM_CACHE = {}
 ELEVATION_CACHE = {}
+
 # ==================== FUNÇÕES DE ELEVAÇÃO ====================
 def get_elevation_batch(coordinates):
     """Obtém elevação de múltiplos pontos"""
@@ -257,6 +262,7 @@ def get_region_elevation_stats(geometry):
             'range': 400.0,
             'points_sampled': 0
         }
+
 # ==================== GADM ====================
 def download_and_read_gadm_json(country_code, level):
     cache_key = f"{country_code}_{level}"
@@ -291,6 +297,7 @@ def normalize_name(name):
     name = ''.join(char for char in name if unicodedata.category(char) != 'Mn')
     name = name.replace(' ', '').replace('-', '').replace('_', '').lower()
     return name
+
 # ==================== CÁLCULO ====================
 def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevation=0, elevation_stats=None):
     """Calcula inundação considerando elevação"""
@@ -381,6 +388,7 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
         return True, water_level, severity, recovery_days
     else:
         return False, 0, 'Nenhuma', 0
+
 # ==================== ROTAS ====================
 @app.route('/')
 def home():
@@ -506,7 +514,7 @@ def get_municipalities():
         'Luanda': 'Luanda',
         'Quiçama': 'Quiçama',
         'Viana': 'Viana',
-        'Kilamba-Kiaxi': 'Kilamba Kiaxi',   # <--- AQUI ESTÁ A CORREÇÃO!
+        'Kilamba-Kiaxi': 'Kilamba Kiaxi',
         'Talatona': 'Talatona',
         'Maianga': 'Maianga',
         'Rangel': 'Rangel',
@@ -654,6 +662,7 @@ def get_elevation():
             'success': False,
             'error': str(e)
         }), 400
+
 # CORREÇÃO: Substitua a rota /api/simulate no seu app.py
 
 @app.route('/api/simulate', methods=['POST'])
@@ -704,7 +713,7 @@ def simulate_flood():
            
             bairros_list = BAIRROS.get(matching_key, [])
            
-            # *** CORREÇÃO AQUI: Filtrar bairro específico ***
+            # Filtrar bairro específico ***
             if bairro and bairro != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro]
                 if not bairros_list:
