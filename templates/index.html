@@ -18,6 +18,7 @@
             --shadow: rgba(0, 0, 0, 0.1);
             --danger: #d32f2f;
             --success: #388e3c;
+            --header-h: 60px;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Poppins', sans-serif; overflow-x: hidden; background: var(--bg); }
@@ -29,11 +30,21 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             position: relative; z-index: 1000;
             display: flex; align-items: center; justify-content: space-between;
+            min-height: var(--header-h);
         }
-        .header h1 { font-size: 1.5em; font-weight: 700; }
+        .header h1 {
+            font-size: clamp(1rem, 3.5vw, 1.5em);
+            font-weight: 700;
+            line-height: 1.3;
+            word-break: break-word;
+        }
 
         /* MAIN */
-        .main-container { display: flex; height: calc(100vh - 70px); overflow: hidden; }
+        .main-container {
+            display: flex;
+            height: calc(100dvh - var(--header-h));
+            overflow: hidden;
+        }
 
         /* SIDEBAR */
         .sidebar {
@@ -41,6 +52,7 @@
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
             overflow-y: auto; z-index: 500;
             transition: left 0.35s ease;
+            flex-shrink: 0;
         }
         .control-panel { padding: 20px; }
         .control-panel h2 {
@@ -62,8 +74,11 @@
             background: linear-gradient(135deg, var(--primary), var(--primary-light));
             color: white; border: none; border-radius: 8px;
             font-weight: 600; font-size: 1em; cursor: pointer; transition: all 0.3s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
         .btn-simulate:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(2,119,189,0.4); }
+        .btn-simulate:active { transform: scale(0.98); }
 
         /* STATS */
         .stats-container { padding: 15px 20px; background: #f5f5f5; border-top: 1px solid #e0e0e0; }
@@ -73,8 +88,8 @@
         .stat-card .label { font-size: 0.8em; color: #666; margin-top: 3px; }
 
         /* CONTENT */
-        .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .map-container { flex: 1; position: relative; }
+        .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+        .map-container { flex: 1; position: relative; min-height: 0; }
         #map { width: 100%; height: 100%; z-index: 1; }
 
         /* RESULTS */
@@ -92,9 +107,10 @@
             background: white; padding: 15px; border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;
             min-width: 200px; font-size: 0.85em;
+            max-width: calc(100% - 20px);
         }
         .map-legend h4 { margin-bottom: 10px; color: var(--text); }
-        .legend-item { display: flex; align-items: center; margin-bottom: 8px; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; flex-wrap: nowrap; }
         .legend-dot {
             width: 18px; height: 18px; border-radius: 50%;
             margin-right: 10px; border: 2px solid rgba(0,0,0,0.4); flex-shrink: 0;
@@ -122,6 +138,7 @@
         .error-message {
             background: #ffebee; color: var(--danger); padding: 10px;
             border-radius: 8px; margin-top: 10px; font-size: 0.9em; display: none;
+            word-break: break-word;
         }
         .error-message.active { display: block; }
 
@@ -130,35 +147,157 @@
         .status-flooded { background: #ffebee; color: var(--danger); }
         .status-safe    { background: #e8f5e9; color: var(--success); }
 
-        /* MOBILE */
+        /* SIDEBAR CLOSE BUTTON (mobile only) */
+        .sidebar-close {
+            display: none;
+            position: sticky;
+            top: 0;
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: left;
+            z-index: 10;
+            font-family: 'Poppins', sans-serif;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .sidebar-close::after {
+            content: ' ✕';
+            float: right;
+            font-weight: 400;
+        }
+
+        /* ── TABLET (769px – 1100px) ─────────────────────────── */
+        @media (max-width: 1100px) and (min-width: 769px) {
+            .sidebar { width: 290px; }
+            .control-panel { padding: 15px; }
+        }
+
+        /* ── MOBILE (≤ 768px) ────────────────────────────────── */
         @media (max-width: 768px) {
-            .header { padding: 12px 16px; }
-            .header h1 { font-size: 1.3rem; }
+            :root { --header-h: 56px; }
+
+            .header { padding: 10px 14px; }
+            .header h1 { font-size: clamp(0.95rem, 5vw, 1.25rem); }
+
             .sidebar {
-                position: fixed; top: 0; left: -100%; width: 100%; height: 100vh;
-                z-index: 2500; transition: left 0.35s ease; overflow-y: auto;
+                position: fixed;
+                top: 0; left: -100%;
+                width: min(320px, 90vw);
+                height: 100dvh;
+                z-index: 2500;
+                transition: left 0.35s ease;
+                overflow-y: auto;
             }
             .sidebar.active { left: 0; }
+
+            .sidebar-close { display: block; }
+
             .mobile-toggle {
-                display: block; background: rgba(255,255,255,0.95);
-                border: none; border-radius: 6px; padding: 8px 12px;
-                font-size: 1.4rem; box-shadow: 0 2px 6px rgba(0,0,0,.2); cursor: pointer; z-index: 2600;
+                display: block;
+                background: rgba(255,255,255,0.95);
+                border: none; border-radius: 6px;
+                padding: 8px 12px; font-size: 1.2rem;
+                box-shadow: 0 2px 6px rgba(0,0,0,.2);
+                cursor: pointer; z-index: 2600;
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
+                white-space: nowrap;
             }
-            .results-section { max-height: 50vh; padding: 15px; }
+
+            /* iOS zoom prevention */
+            .form-group select,
+            .form-group input {
+                font-size: 16px;
+            }
+
+            .results-section {
+                max-height: 45vh;
+                padding: 14px;
+            }
+            .results-section h2 { font-size: 1.1em; margin-bottom: 10px; }
+
+            .map-legend {
+                min-width: 160px;
+                padding: 10px;
+                font-size: 0.78em;
+                bottom: 10px;
+                right: 8px;
+            }
+            .map-legend h4 { font-size: 0.9em; margin-bottom: 6px; }
+            .legend-item { margin-bottom: 5px; }
+            .legend-dot  { width: 14px; height: 14px; margin-right: 7px; }
+            .legend-square { width: 22px; height: 14px; margin-right: 7px; }
+
+            /* Results cards grid override */
+            #resultsContent > div[style] {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+            }
         }
+
+        /* ── SMALL MOBILE (≤ 480px) ──────────────────────────── */
+        @media (max-width: 480px) {
+            .header h1 { font-size: clamp(0.85rem, 5.5vw, 1.1rem); }
+
+            .main-container { height: calc(100dvh - var(--header-h)); }
+
+            .stat-card .value { font-size: 1.2em; }
+            .stat-card .label { font-size: 0.75em; }
+            .stat-card       { padding: 10px 8px; }
+
+            .results-section { max-height: 50vh; padding: 12px; }
+
+            .map-legend {
+                min-width: 0;
+                width: auto;
+                max-width: 160px;
+                padding: 8px;
+                font-size: 0.72em;
+                bottom: 8px;
+                right: 5px;
+            }
+        }
+
+        /* ── VERY SMALL (≤ 360px) ────────────────────────────── */
+        @media (max-width: 360px) {
+            .header h1 { font-size: 0.85rem; }
+            .stats-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+            .stat-card .value { font-size: 1em; }
+        }
+
         @media (min-width: 769px) { .mobile-toggle { display: none; } }
+
+        /* Overlay behind open sidebar on mobile */
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 2400;
+        }
+        .sidebar-backdrop.active { display: block; }
     </style>
 </head>
 <body>
 
 <div class="header">
     <h1>Simulador de Inundações — Angola</h1>
-    <button class="mobile-toggle" id="mobileToggle">Menu</button>
+    <button class="mobile-toggle" id="mobileToggle">☰ Menu</button>
 </div>
+
+<!-- Backdrop (mobile) -->
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
 <div class="main-container">
     <!-- SIDEBAR -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
+        <button class="sidebar-close" id="sidebarClose">Configurações</button>
         <div class="control-panel">
             <h2>Configurações</h2>
 
@@ -307,7 +446,7 @@
     function buildPopup(p) {
         const c = getSeverityColors(p.severity, p.flooded);
         return `
-            <div style="font-family:Poppins,sans-serif;min-width:240px;">
+            <div style="font-family:Poppins,sans-serif;min-width:200px;max-width:280px;">
                 <h3 style="margin:0 0 8px;color:#0277bd;border-bottom:2px solid #ffb300;padding-bottom:4px;">
                     ${p.name}
                 </h3>
@@ -464,7 +603,7 @@
             ? `Análise do Bairro: ${areaName}`
             : `${floodedAreas.length} de ${totalAreas} áreas inundadas em ${areaName}`;
 
-        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:15px;">';
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:15px;">';
         floodedAreas.forEach(p => {
             const c = getSeverityColors(p.severity, true);
             html += `
@@ -474,7 +613,7 @@
                     transition:transform 0.2s;"
                     onmouseover="this.style.transform='translateY(-4px)'"
                     onmouseout="this.style.transform='translateY(0)'">
-                    <h3 style="margin:0 0 12px;color:#0277bd;font-size:1.1em;">${p.name}</h3>
+                    <h3 style="margin:0 0 12px;color:#0277bd;font-size:1.1em;word-break:break-word;">${p.name}</h3>
                     <div style="background:${c.fill};padding:10px;border-radius:8px;margin-bottom:12px;text-align:center;">
                         <div style="font-size:0.8em;color:#555;margin-bottom:3px;">SEVERIDADE</div>
                         <div style="font-size:1.3em;font-weight:700;color:${c.hex};">${p.severity}</div>
@@ -589,6 +728,7 @@
         };
 
         document.getElementById('loadingOverlay').classList.add('active');
+        closeSidebar();
 
         fetch(`${API_URL}/api/simulate`, {
             method:  'POST',
@@ -605,6 +745,18 @@
             document.getElementById('loadingOverlay').classList.remove('active');
             showError('Erro de rede: ' + err);
         });
+    }
+
+    // ── Sidebar helpers ───────────────────────────────────────────
+    function openSidebar() {
+        document.getElementById('sidebar').classList.add('active');
+        document.getElementById('sidebarBackdrop').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeSidebar() {
+        document.getElementById('sidebar').classList.remove('active');
+        document.getElementById('sidebarBackdrop').classList.remove('active');
+        document.body.style.overflow = '';
     }
 
     // ── Eventos ───────────────────────────────────────────────────
@@ -628,13 +780,9 @@
     document.getElementById('municipality').addEventListener('change', e => loadBairros(e.target.value));
 
     // mobile menu
-    document.getElementById('mobileToggle').addEventListener('click', () =>
-        document.querySelector('.sidebar').classList.toggle('active'));
-    document.querySelector('.content-area').addEventListener('click', e => {
-        const sb = document.querySelector('.sidebar');
-        if (sb.classList.contains('active') && !sb.contains(e.target))
-            sb.classList.remove('active');
-    });
+    document.getElementById('mobileToggle').addEventListener('click', openSidebar);
+    document.getElementById('sidebarClose').addEventListener('click', closeSidebar);
+    document.getElementById('sidebarBackdrop').addEventListener('click', closeSidebar);
 
     // ── Init ──────────────────────────────────────────────────────
     window.onload = () => { initMap(); loadProvinces(); };
