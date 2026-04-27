@@ -1,4 +1,5 @@
 import os
+os.system("pip install -r requirements.txt")
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime
@@ -296,32 +297,6 @@ def normalize_name(name):
     name = ''.join(char for char in name if unicodedata.category(char) != 'Mn')
     name = name.replace(' ', '').replace('-', '').replace('_', '').lower()
     return name
-
-
-def simulate_bairros_for_municipality(municipality, flood_rate, water_level_input):
-    bairros = BAIRROS.get(municipality, [])
-    results = []
-
-    for b in bairros:
-        elevation_stats = get_point_elevation(b['lat'], b['lon'])
-
-        is_flooded, wl, severity, recovery_days = calculate_flood_risk(
-            b['risk'],
-            flood_rate,
-            water_level_input,
-            elevation_stats['avg'],
-            elevation_stats
-        )
-
-        results.append({
-            'name': b['name'],
-            'flooded': is_flooded,
-            'severity': severity,
-            'waterLevel': wl,
-            'risk': b['risk']
-        })
-
-    return results
 
 
 # ==================== CÁLCULO DE INUNDAÇÃO ====================
@@ -735,19 +710,6 @@ def simulate_flood():
         for i, row in gdf.iterrows():
             prov = row['NAME_1']
             name = row[f'NAME_{level_num}']
-
-            # agora sim já temos "name" definido
-            bairros_details = simulate_bairros_for_municipality(
-                name, flood_rate, water_level_input
-            )
-
-            gdf.at[i, 'bairros'] = bairros_details
-            bairros_flooded = sum(1 for b in bairros_details if b['flooded'])
-
-              # ✅ GUARDAR NO GDF (AQUI MESMO)
-            gdf.at[i, 'bairros_flooded'] = bairros_flooded
-            gdf.at[i, 'bairros_total'] = len(bairros_details)
-
             elevation_stats = get_region_elevation_stats(row['geometry'])
             avg_elevation   = elevation_stats['avg']
 
@@ -778,7 +740,6 @@ def simulate_flood():
         gdf_copy        = gdf.copy()
         gdf_copy['lat'] = gdf.geometry.centroid.y
         gdf_copy['lon'] = gdf.geometry.centroid.x
-        gdf['bairros'] = gdf['bairros'].apply(lambda x: x if isinstance(x, list) else [])
         results  = gdf_copy.drop(columns=['geometry']).to_dict('records')
         geojson  = gdf.to_json()
         flooded_count  = len(gdf[gdf['flooded']])
