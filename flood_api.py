@@ -11,6 +11,7 @@ from io import BytesIO
 import numpy as np
 import math
 import json
+from shapely.geometry import Point, Polygon, MultiPoint
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,51 +146,46 @@ BAIRROS = {
     ],
 }
 
-# ==================== FUNÇÃO PARA CRIAR POLÍGONO A PARTIR DE BAIRROS ====================
+# ==================== FUNÇÃO PARA CRIAR POLÍGONO REAL (CONVEX HULL) A PARTIR DOS BAIRROS ====================
 def create_municipio_polygon_from_bairros(municipio_name, bairros_list):
-    """Cria um polígono que engloba todos os bairros do município"""
-    import math
+    """
+    Cria um polígono REAL (não circular) usando o casco convexo (convex hull)
+    dos pontos dos bairros do município.
+    """
+    from shapely.geometry import Point, MultiPoint
     
     # Coletar todas as coordenadas dos bairros
-    coords = []
+    points = []
     for bairro in bairros_list:
         if 'lat' in bairro and 'lon' in bairro:
-            coords.append((bairro['lon'], bairro['lat']))
+            points.append(Point(bairro['lon'], bairro['lat']))
     
-    if len(coords) < 3:
+    if len(points) < 3:
         return None
     
-    # Calcular centróide
-    center_lon = sum(c[0] for c in coords) / len(coords)
-    center_lat = sum(c[1] for c in coords) / len(coords)
+    # Criar MultiPoint e calcular o casco convexo
+    multipoint = MultiPoint(points)
+    convex_hull = multipoint.convex_hull
     
-    # Calcular distâncias máximas para definir o raio do círculo que engloba todos
-    max_dist = 0
-    for lon, lat in coords:
-        dx = (lon - center_lon) * 111.32 * math.cos(center_lat * math.pi / 180)
-        dy = (lat - center_lat) * 110.574
-        dist = math.sqrt(dx*dx + dy*dy)
-        max_dist = max(max_dist, dist)
+    # Se o convex hull for um polígono, usá-lo
+    if convex_hull.geom_type == 'Polygon':
+        # Suavizar um pouco o polígono (opcional)
+        coords = list(convex_hull.exterior.coords)
+        return {
+            "type": "Polygon",
+            "coordinates": [coords]
+        }
+    elif convex_hull.geom_type == 'LineString' or len(points) == 2:
+        # Se for uma linha ou só 2 pontos, criar um pequeno buffer
+        buffered = convex_hull.buffer(0.01)
+        if buffered.geom_type == 'Polygon':
+            coords = list(buffered.exterior.coords)
+            return {
+                "type": "Polygon",
+                "coordinates": [coords]
+            }
     
-    # Adicionar 20% de margem
-    radius_km = (max_dist / 1000) * 1.2
-    radius_km = max(0.8, min(radius_km, 3.5))
-    
-    # Criar polígono circular
-    coords_poly = []
-    earth_radius = 6371
-    points = 48
-    
-    for i in range(points + 1):
-        angle = (i * 2 * math.pi) / points
-        d_lat = (radius_km / earth_radius) * math.cos(angle) * (180 / math.pi)
-        d_lon = (radius_km / earth_radius) * math.sin(angle) * (180 / math.pi) / math.cos(center_lat * math.pi / 180)
-        coords_poly.append([center_lon + d_lon, center_lat + d_lat])
-    
-    return {
-        "type": "Polygon",
-        "coordinates": [coords_poly]
-    }
+    return None
 
 # ==================== CACHES ====================
 GADM_CACHE = {}
@@ -243,33 +239,19 @@ def get_point_elevation(lat, lon):
 
 def get_region_elevation_stats(geometry):
     try:
-        cache_key = f"{geometry.centroid.y:.4f},{geometry.centroid.x:.4f}"
-        if cache_key in ELEVATION_CACHE:
-            return ELEVATION_CACHE[cache_key]
-
-        bounds = geometry.bounds
-        centroid = geometry.centroid
-        area = geometry.area
-
-        num_points = 9 if area > 1.0 else (5 if area > 0.1 else 3)
+        from shapely.geometry import shape
+        
+        geom = shape(geometry) if isinstance(geometry, dict) else geometry
+        bounds = geom.bounds
+        centroid = geom.centroid
 
         points = [(centroid.y, centroid.x)]
-        if num_points >= 5:
-            points.extend([
-                (bounds[1], bounds[0]),
-                (bounds[3], bounds[2]),
-                (bounds[1], bounds[2]),
-                (bounds[3], bounds[0]),
-            ])
-        if num_points >= 9:
-            mid_lat = (bounds[1] + bounds[3]) / 2
-            mid_lon = (bounds[0] + bounds[2]) / 2
-            points.extend([
-                (mid_lat, bounds[0]),
-                (mid_lat, bounds[2]),
-                (bounds[1], mid_lon),
-                (bounds[3], mid_lon),
-            ])
+        points.extend([
+            (bounds[1], bounds[0]),
+            (bounds[3], bounds[2]),
+            (bounds[1], bounds[2]),
+            (bounds[3], bounds[0]),
+        ])
 
         elevations = get_elevation_batch(points)
         if elevations and len(elevations) > 0:
@@ -278,20 +260,15 @@ def get_region_elevation_stats(geometry):
                 avg = np.mean(valid_elevations)
                 min_elev = np.min(valid_elevations)
                 max_elev = np.max(valid_elevations)
-                result = {
+                return {
                     'avg': float(avg),
                     'min': float(min_elev),
                     'max': float(max_elev),
                     'range': float(max_elev - min_elev),
                     'points_sampled': len(valid_elevations)
                 }
-                ELEVATION_CACHE[cache_key] = result
-                return result
 
-        result = {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
-        ELEVATION_CACHE[cache_key] = result
-        return result
-
+        return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
     except Exception as e:
         logger.error(f"Erro ao calcular elevação: {e}")
         return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
@@ -408,7 +385,7 @@ def api_home():
         'message': 'API de Simulação de Inundações - Angola',
         'version': '4.2.0',
         'status': 'online',
-        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Nova Divisão Geográfica de Angola (Lei 14/24)', 'Polígonos para todos os municípios'],
+        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Nova Divisão Geográfica de Angola (Lei 14/24)', 'Polígonos reais para todos os municípios'],
         'endpoints': {
             'health':         '/api/health',
             'info':           '/api/info',
@@ -424,7 +401,7 @@ def api_home():
 def health():
     return jsonify({
         'status': 'ok',
-        'message': 'API activa — Todos os municípios têm polígonos',
+        'message': 'API activa — Todos os municípios têm polígonos reais',
         'timestamp': datetime.now().isoformat(),
         'cache_status': {
             'gadm_cached': len(GADM_CACHE),
@@ -492,15 +469,14 @@ def get_municipalities():
             if static_name:
                 static_mun = next((m for m in static_muns if m['name'] == static_name), None)
                 if static_mun:
-                    centroid = row['geometry'].centroid
                     municipalities.append({
                         'id': static_mun['id'], 'name': static_name, 'province': 'Luanda',
                         'risk': static_mun['risk'], 'population': static_mun['population'],
-                        'area': static_mun['area'], 'lat': centroid.y, 'lon': centroid.x,
+                        'area': static_mun['area'], 'lat': row['geometry'].centroid.y, 'lon': row['geometry'].centroid.x,
                         'geometry': row['geometry'].__geo_interface__
                     })
 
-    # Adicionar municípios novos (não estão no GADM) com polígonos criados a partir dos bairros
+    # Adicionar municípios novos (não estão no GADM) com polígonos REAIS (convex hull dos bairros)
     novos_municipios = ['Hoji Ya Henda', 'Kilamba', 'Camama', 'Mulenvos']
     for mun_name in novos_municipios:
         if not any(m['name'] == mun_name for m in municipalities):
@@ -517,6 +493,11 @@ def get_municipalities():
                 
                 if polygon_geo:
                     municipality_data['geometry'] = polygon_geo
+                    # Calcular centróide real do polígono
+                    from shapely.geometry import shape
+                    centroid = shape(polygon_geo).centroid
+                    municipality_data['lat'] = centroid.y
+                    municipality_data['lon'] = centroid.x
                 
                 municipalities.append(municipality_data)
 
@@ -601,9 +582,116 @@ def simulate_flood():
         logger.info(f"Simulação — level={level} province={province_param} municipality={municipality_param} bairro={bairro_sel}")
 
         # ============================================================
+        # SIMULAÇÃO DE MUNICÍPIOS
+        # ============================================================
+        if level == 'municipality':
+            static_muns = MUNICIPALITIES.get('Luanda', [])
+            
+            if municipality_param == 'all':
+                muns_to_simulate = static_muns
+            else:
+                muns_to_simulate = [m for m in static_muns if m['name'] == municipality_param]
+                if not muns_to_simulate:
+                    return jsonify({'success': False, 'error': f'Município {municipality_param} não encontrado'}), 404
+
+            results = []
+            features = []
+
+            for mun in muns_to_simulate:
+                mun_name = mun['name']
+                risk = mun['risk']
+                pop = mun['population']
+                
+                # Obter geometria: primeiro tentar do GADM, senão criar a partir dos bairros
+                geometry = None
+                
+                # Tentar obter do GADM
+                gdf = download_and_read_gadm_json('AGO', 2)
+                if gdf is not None:
+                    gdf_luanda = gdf[gdf['NAME_1'] == 'Luanda']
+                    gadm_row = gdf_luanda[gdf_luanda['NAME_2'] == mun_name]
+                    if not gadm_row.empty:
+                        geometry = gadm_row.iloc[0]['geometry'].__geo_interface__
+                
+                # Se não encontrou no GADM, criar polígono REAL a partir dos bairros
+                if geometry is None and mun_name in BAIRROS:
+                    bairros_do_mun = BAIRROS[mun_name]
+                    geometry = create_municipio_polygon_from_bairros(mun_name, bairros_do_mun)
+                
+                # Se ainda não tem geometria, pular
+                if geometry is None:
+                    logger.warning(f"Município {mun_name} sem geometria")
+                    continue
+                
+                elevation_stats = get_region_elevation_stats(geometry)
+                avg_elevation = elevation_stats['avg']
+
+                is_flooded, wl, severity, recovery_days = calculate_flood_risk(
+                    risk, flood_rate, water_level_input, avg_elevation, elevation_stats
+                )
+
+                affected_population = 0
+                if is_flooded:
+                    impact_factor = min(wl / 20.0, 0.5)
+                    affected_population = int(pop * impact_factor)
+
+                # Calcular centróide para referência
+                from shapely.geometry import shape
+                centroid = shape(geometry).centroid
+
+                result_data = {
+                    'name': mun_name,
+                    'province': 'Luanda',
+                    'flooded': is_flooded,
+                    'waterLevel': wl,
+                    'severity': severity,
+                    'recoveryDays': recovery_days,
+                    'affectedPopulation': affected_population,
+                    'totalPopulation': pop,
+                    'risk': risk,
+                    'elevation': round(avg_elevation, 1),
+                    'lat': centroid.y,
+                    'lon': centroid.x,
+                }
+                results.append(result_data)
+
+                features.append({
+                    'type': 'Feature',
+                    'geometry': geometry,
+                    'properties': result_data,
+                })
+
+            if len(features) == 0:
+                return jsonify({'success': False, 'error': 'Nenhum município encontrado para simular'}), 404
+
+            flooded_count = sum(1 for r in results if r['flooded'])
+            total_affected = sum(r['affectedPopulation'] for r in results)
+            geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
+
+            return jsonify({
+                'success': True,
+                'data': results,
+                'geojson': geojson,
+                'statistics': {
+                    'floodedCount': flooded_count,
+                    'totalAffected': total_affected,
+                    'totalItems': len(results),
+                    'avgRisk': (flooded_count / len(results) * 100) if results else 0,
+                },
+                'parameters': {
+                    'level': 'municipality',
+                    'floodRate': flood_rate * 100,
+                    'province': province_param,
+                    'municipality': municipality_param,
+                    'elevation_used': True,
+                },
+                'timestamp': datetime.now().isoformat(),
+            })
+
+        # ============================================================
         # SIMULAÇÃO DE BAIRROS
         # ============================================================
-        if level == 'bairro':
+        elif level == 'bairro':
             if not municipality_param or municipality_param == 'all':
                 return jsonify({'success': False, 'error': 'Seleccione um município específico para simular bairros'}), 400
 
@@ -662,19 +750,25 @@ def simulate_flood():
                 }
                 results.append(result_data)
 
-                # Criar polígono circular para o bairro
-                radius_km = max(0.4, min(0.8, pop / 300000))
-                polygon_geo = create_circular_polygon(b_lat, b_lon, radius_km)
+                # Para bairros, usar um pequeno polígono (buffer) - não circular, mas sim um quadrado
+                from shapely.geometry import Point
+                pt = Point(b_lon, b_lat)
+                # Criar um quadrado de ~0.5km de lado
+                buffer_size = 0.003  # ~333 metros
+                polygon = pt.buffer(buffer_size).envelope
+                coords = list(polygon.exterior.coords)
                 
                 features.append({
                     'type': 'Feature',
-                    'geometry': polygon_geo,
+                    'geometry': {
+                        "type": "Polygon",
+                        "coordinates": [coords]
+                    },
                     'properties': result_data,
                 })
 
             flooded_count = sum(1 for r in results if r['flooded'])
             total_affected = sum(r['affectedPopulation'] for r in results)
-
             geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
 
             return jsonify({
@@ -698,115 +792,6 @@ def simulate_flood():
                 'timestamp': datetime.now().isoformat(),
             })
 
-        # ============================================================
-        # SIMULAÇÃO DE MUNICÍPIOS
-        # ============================================================
-        elif level == 'municipality':
-            static_muns = MUNICIPALITIES.get('Luanda', [])
-            
-            if municipality_param == 'all':
-                muns_to_simulate = static_muns
-            else:
-                muns_to_simulate = [m for m in static_muns if m['name'] == municipality_param]
-                if not muns_to_simulate:
-                    return jsonify({'success': False, 'error': f'Município {municipality_param} não encontrado'}), 404
-
-            results = []
-            features = []
-
-            for mun in muns_to_simulate:
-                mun_name = mun['name']
-                risk = mun['risk']
-                pop = mun['population']
-                
-                # Obter geometria: primeiro tentar do GADM, senão criar a partir dos bairros
-                geometry = None
-                
-                # Tentar obter do GADM
-                gdf = download_and_read_gadm_json('AGO', 2)
-                if gdf is not None:
-                    gdf_luanda = gdf[gdf['NAME_1'] == 'Luanda']
-                    gadm_row = gdf_luanda[gdf_luanda['NAME_2'] == mun_name]
-                    if not gadm_row.empty:
-                        geometry = gadm_row.iloc[0]['geometry'].__geo_interface__
-                
-                # Se não encontrou no GADM, criar polígono a partir dos bairros
-                if geometry is None and mun_name in BAIRROS:
-                    bairros_do_mun = BAIRROS[mun_name]
-                    geometry = create_municipio_polygon_from_bairros(mun_name, bairros_do_mun)
-                
-                # Fallback: usar ponto central
-                if geometry is None:
-                    if 'lat' in mun and 'lon' in mun:
-                        geometry = {
-                            "type": "Point",
-                            "coordinates": [mun['lon'], mun['lat']]
-                        }
-                    else:
-                        geometry = {
-                            "type": "Point",
-                            "coordinates": [13.2344, -8.8383]
-                        }
-                
-                elevation_stats = get_region_elevation_stats_for_geometry(geometry)
-                avg_elevation = elevation_stats['avg']
-
-                is_flooded, wl, severity, recovery_days = calculate_flood_risk(
-                    risk, flood_rate, water_level_input, avg_elevation, elevation_stats
-                )
-
-                affected_population = 0
-                if is_flooded:
-                    impact_factor = min(wl / 20.0, 0.5)
-                    affected_population = int(pop * impact_factor)
-
-                result_data = {
-                    'name': mun_name,
-                    'province': 'Luanda',
-                    'flooded': is_flooded,
-                    'waterLevel': wl,
-                    'severity': severity,
-                    'recoveryDays': recovery_days,
-                    'affectedPopulation': affected_population,
-                    'totalPopulation': pop,
-                    'risk': risk,
-                    'elevation': round(avg_elevation, 1),
-                }
-                results.append(result_data)
-
-                features.append({
-                    'type': 'Feature',
-                    'geometry': geometry,
-                    'properties': result_data,
-                })
-
-            flooded_count = sum(1 for r in results if r['flooded'])
-            total_affected = sum(r['affectedPopulation'] for r in results)
-            geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
-
-            return jsonify({
-                'success': True,
-                'data': results,
-                'geojson': geojson,
-                'statistics': {
-                    'floodedCount': flooded_count,
-                    'totalAffected': total_affected,
-                    'totalItems': len(results),
-                    'avgRisk': (flooded_count / len(results) * 100) if results else 0,
-                },
-                'parameters': {
-                    'level': 'municipality',
-                    'floodRate': flood_rate * 100,
-                    'province': province_param,
-                    'municipality': municipality_param,
-                    'elevation_used': True,
-                },
-                'timestamp': datetime.now().isoformat(),
-            })
-
-        # ============================================================
-        # SIMULAÇÃO DE PROVÍNCIAS
-        # ============================================================
         else:
             return jsonify({'success': False, 'error': 'Nível inválido. Use: municipality ou bairro'}), 400
 
@@ -815,54 +800,6 @@ def simulate_flood():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-def create_circular_polygon(lat, lon, radius_km, points=48):
-    """Cria um polígono circular"""
-    import math
-    coords = []
-    earth_radius = 6371
-    
-    for i in range(points + 1):
-        angle = (i * 2 * math.pi) / points
-        d_lat = (radius_km / earth_radius) * math.cos(angle) * (180 / math.pi)
-        d_lon = (radius_km / earth_radius) * math.sin(angle) * (180 / math.pi) / math.cos(lat * math.pi / 180)
-        coords.append([lon + d_lon, lat + d_lat])
-    
-    return {"type": "Polygon", "coordinates": [coords]}
-
-def get_region_elevation_stats_for_geometry(geometry):
-    """Calcula estatísticas de elevação para uma geometria"""
-    try:
-        from shapely.geometry import shape
-        
-        geom = shape(geometry)
-        bounds = geom.bounds
-        centroid = geom.centroid
-        
-        points = [(centroid.y, centroid.x)]
-        points.extend([
-            (bounds[1], bounds[0]),
-            (bounds[3], bounds[2]),
-            (bounds[1], bounds[2]),
-            (bounds[3], bounds[0]),
-        ])
-        
-        elevations = get_elevation_batch(points)
-        if elevations and len(elevations) > 0:
-            valid_elevations = [e for e in elevations if e is not None and e >= 0]
-            if valid_elevations:
-                return {
-                    'avg': float(np.mean(valid_elevations)),
-                    'min': float(np.min(valid_elevations)),
-                    'max': float(np.max(valid_elevations)),
-                    'range': float(np.max(valid_elevations) - np.min(valid_elevations)),
-                    'points_sampled': len(valid_elevations)
-                }
-        
-        return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
-    except Exception as e:
-        logger.error(f"Erro ao calcular elevação para geometria: {e}")
-        return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
