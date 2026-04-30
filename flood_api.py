@@ -9,151 +9,189 @@ import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 import numpy as np
+import math
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# ==================== DADOS ESTÁTICOS ====================
+# ==================== DADOS ESTÁTICOS (NOVA DIVISÃO GEOGRÁFICA) ====================
 PROVINCES = [
     {'id': 1, 'name': 'Luanda', 'risk': 'Muito Alto', 'population': 8329517, 'area': 2417},
 ]
 
 MUNICIPALITIES = {
+    # Nova divisão administrativa de Luanda (Lei 14/24 de 5 de Setembro de 2024)
+    # Municípios confirmados na nova DPA — Luanda passou de 9 para ~15 municípios
     'Luanda': [
-        {'id': 1,  'name': 'Belas',          'population': 600000,  'area': 500,   'risk': 'Alto'},
-        {'id': 2,  'name': 'Cacuaco',         'population': 850000,  'area': 450,   'risk': 'Muito Alto'},
-        {'id': 3,  'name': 'Cazenga',         'population': 980000,  'area': 32,    'risk': 'Muito Alto'},
-        {'id': 4,  'name': 'Icolo e Bengo',   'population': 150000,  'area': 3600,  'risk': 'Médio'},
-        {'id': 5,  'name': 'Luanda',          'population': 2200000, 'area': 116,   'risk': 'Muito Alto'},
-        {'id': 6,  'name': 'Quiçama',         'population': 25000,   'area': 13900, 'risk': 'Baixo'},
-        {'id': 7,  'name': 'Viana',           'population': 2000000, 'area': 1700,  'risk': 'Alto'},
-        {'id': 8,  'name': 'Kilamba Kiaxi',   'population': 1800000, 'area': 189,   'risk': 'Muito Alto'},
-        {'id': 9,  'name': 'Talatona',        'population': 500000,  'area': 160,   'risk': 'Médio'},
-        {'id': 10, 'name': 'Maianga',         'population': 500000,  'area': 50,    'risk': 'Alto'},
-        {'id': 11, 'name': 'Rangel',          'population': 261000,  'area': 62,    'risk': 'Muito Alto'},
-        {'id': 12, 'name': 'Ingombota',       'population': 370000,  'area': 30,    'risk': 'Médio'},
-        {'id': 13, 'name': 'Samba',           'population': 400000,  'area': 345,   'risk': 'Alto'},
-        {'id': 14, 'name': 'Sambizanga',      'population': 300000,  'area': 40,    'risk': 'Muito Alto'},
+        {'id': 1,  'name': 'Belas',         'population': 600000,  'area': 500,  'risk': 'Alto'},
+        {'id': 2,  'name': 'Cacuaco',        'population': 850000,  'area': 450,  'risk': 'Muito Alto'},
+        {'id': 3,  'name': 'Cazenga',        'population': 980000,  'area': 32,   'risk': 'Muito Alto'},
+        {'id': 4,  'name': 'Viana',          'population': 800000,  'area': 800,  'risk': 'Alto'},
+        {'id': 5,  'name': 'Kilamba Kiaxi',  'population': 1120000, 'area': 52,   'risk': 'Muito Alto'},
+        {'id': 6,  'name': 'Talatona',       'population': 500000,  'area': 160,  'risk': 'Médio'},
+        {'id': 7,  'name': 'Maianga',        'population': 500000,  'area': 50,   'risk': 'Alto'},
+        {'id': 8,  'name': 'Rangel',         'population': 261000,  'area': 10,   'risk': 'Muito Alto'},
+        {'id': 9,  'name': 'Ingombota',      'population': 370000,  'area': 8,    'risk': 'Médio'},
+        {'id': 10, 'name': 'Samba',          'population': 400000,  'area': 140,  'risk': 'Alto'},
+        {'id': 11, 'name': 'Sambizanga',     'population': 300000,  'area': 12,   'risk': 'Muito Alto'},
+        {'id': 12, 'name': 'Hoji Ya Henda',  'population': 700000,  'area': 30,   'risk': 'Muito Alto'},
+        {'id': 13, 'name': 'Kilamba',        'population': 250000,  'area': 55,   'risk': 'Médio'},
+        {'id': 14, 'name': 'Camama',         'population': 320000,  'area': 45,   'risk': 'Alto'},
+        {'id': 15, 'name': 'Mulenvos',       'population': 180000,  'area': 20,   'risk': 'Alto'},
     ],
 }
 
-# ==================== BAIRROS COM COORDENADAS REAIS ====================
-# Cada bairro tem lat/lon verificadas via fontes geográficas (OpenStreetMap, elevationmap.net, etc.)
+# ==================== BAIRROS COM COORDENADAS VERIFICADAS (NOVA DIVISÃO) ====================
 BAIRROS = {
+    # ── KILAMBA KIAXI ──────────────────────────────────────────────────────────
     'Kilamba Kiaxi': [
-        {'id': 19,  'name': 'Golfe',            'population': 300000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8950, 'lon': 13.2510},
-        {'id': 20,  'name': 'Palanca',           'population': 280000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.9120, 'lon': 13.2650},
-        {'id': 21,  'name': 'Kilamba',           'population': 450000, 'type': 'Residencial', 'risk': 'Médio',     'lat': -8.9300, 'lon': 13.2900},
-        {'id': 22,  'name': 'Camama',            'population': 320000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.9450, 'lon': 13.2700},
-        {'id': 100, 'name': 'Sapu',              'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.9020, 'lon': 13.2580},
-        {'id': 101, 'name': 'Nova Vida',         'population': 200000, 'type': 'Residencial', 'risk': 'Médio',     'lat': -8.9200, 'lon': 13.2450},
-        {'id': 102, 'name': 'Bairro Popular',    'population': 250000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8870, 'lon': 13.2600},
-        {'id': 103, 'name': 'Benfica',           'population': 180000, 'type': 'Residencial', 'risk': 'Médio',     'lat': -8.9550, 'lon': 13.2550},
-        {'id': 104, 'name': 'Morro Bento',       'population': 220000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8820, 'lon': 13.2480},
-        {'id': 105, 'name': 'Projecto Nova Vida','population': 150000, 'type': 'Residencial', 'risk': 'Baixo',     'lat': -8.9350, 'lon': 13.2400},
+        {'id': 1,  'name': 'Golfe',         'population': 120000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8780, 'lon': 13.2490},
+        {'id': 2,  'name': 'Golfe II',      'population': 100000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8850, 'lon': 13.2550},
+        {'id': 3,  'name': 'Palanca',       'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8950, 'lon': 13.2620},
+        {'id': 4,  'name': 'Vila Estoril',  'population': 90000,  'type': 'Residencial', 'risk': 'Médio',     'lat': -8.8900, 'lon': 13.2440},
+        {'id': 5,  'name': 'Sapú',          'population': 130000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8820, 'lon': 13.2700},
     ],
+
+    # ── CAZENGA ────────────────────────────────────────────────────────────────
     'Cazenga': [
-        {'id': 23, 'name': 'Hoji-ya-Henda',  'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
-        {'id': 24, 'name': 'Tala Hady',       'population': 180000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8280, 'lon': 13.3050},
-        {'id': 25, 'name': 'Cazenga Sede',    'population': 250000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8195, 'lon': 13.2880},
-        {'id': 26, 'name': 'Sapu',            'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8350, 'lon': 13.2820},
+        {'id': 10, 'name': 'Cazenga Sede',   'population': 250000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8195, 'lon': 13.2880},
+        {'id': 11, 'name': 'Tala Hady',      'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8270, 'lon': 13.3030},
+        {'id': 12, 'name': 'Sapú (Cazenga)', 'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8340, 'lon': 13.2850},
+        {'id': 13, 'name': 'Kikolo',         'population': 160000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8120, 'lon': 13.3020},
     ],
-    'Luanda': [
-        {'id': 1, 'name': 'Ingombota',      'population': 150000, 'type': 'Comercial',   'risk': 'Médio',      'lat': -8.8150, 'lon': 13.2320},
-        {'id': 2, 'name': 'Maianga',        'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8420, 'lon': 13.2450},
-        {'id': 3, 'name': 'Rangel',         'population': 220000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8300, 'lon': 13.2550},
-        {'id': 4, 'name': 'Sambizanga',     'population': 280000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8050, 'lon': 13.2450},
-        {'id': 5, 'name': 'Ilha de Luanda', 'population': 45000,  'type': 'Turístico',   'risk': 'Muito Alto', 'lat': -8.7950, 'lon': 13.2150},
-        {'id': 6, 'name': 'Maculusso',      'population': 90000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8280, 'lon': 13.2350},
-        {'id': 7, 'name': 'Alvalade',       'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8380, 'lon': 13.2280},
-        {'id': 8, 'name': 'Mutamba',        'population': 80000,  'type': 'Comercial',   'risk': 'Alto',       'lat': -8.8220, 'lon': 13.2300},
-    ],
+
+    # ── CACUACO ────────────────────────────────────────────────────────────────
     'Cacuaco': [
-        {'id': 9,  'name': 'Kikolo',     'population': 180000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7600, 'lon': 13.3200},
-        {'id': 10, 'name': 'Sequele',    'population': 140000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7820, 'lon': 13.3050},
-        {'id': 11, 'name': 'Funda',      'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7950, 'lon': 13.3450},
-        {'id': 12, 'name': 'Quiage',     'population': 95000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7700, 'lon': 13.3350},
-        {'id': 13, 'name': 'Cabolombo',  'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7850, 'lon': 13.3180},
+        {'id': 20, 'name': 'Cacuaco Sede', 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7870, 'lon': 13.3670},
+        {'id': 21, 'name': 'Sequele',      'population': 140000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8030, 'lon': 13.3260},
+        {'id': 22, 'name': 'Funda',        'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7700, 'lon': 13.3720},
+        {'id': 23, 'name': 'Quiage',       'population': 95000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7560, 'lon': 13.3550},
+        {'id': 24, 'name': 'Cabolombo',    'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7780, 'lon': 13.3440},
     ],
+
+    # ── VIANA ──────────────────────────────────────────────────────────────────
     'Viana': [
-        {'id': 14, 'name': 'Viana Sede', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.9050, 'lon': 13.3750},
-        {'id': 15, 'name': 'Calumbo',    'population': 180000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8800, 'lon': 13.4150},
-        {'id': 16, 'name': 'Catete',     'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -9.0900, 'lon': 13.7100},
-        {'id': 17, 'name': 'Kikuxi',     'population': 200000, 'type': 'Industrial',  'risk': 'Alto',       'lat': -8.9250, 'lon': 13.3500},
-        {'id': 18, 'name': 'Zango',      'population': 350000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.9550, 'lon': 13.3950},
+        {'id': 30, 'name': 'Viana Sede', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.9040, 'lon': 13.3740},
+        {'id': 31, 'name': 'Zango',      'population': 350000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.9520, 'lon': 13.4030},
+        {'id': 32, 'name': 'Kikuxi',     'population': 200000, 'type': 'Industrial',  'risk': 'Alto',       'lat': -8.9180, 'lon': 13.3390},
+        {'id': 33, 'name': 'Calumbo',    'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8670, 'lon': 13.4290},
     ],
+
+    # ── BELAS ──────────────────────────────────────────────────────────────────
     'Belas': [
-        {'id': 27, 'name': 'Belas Sede', 'population': 180000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -9.0850, 'lon': 13.2050},
-        {'id': 28, 'name': 'Benfica',    'population': 140000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.9750, 'lon': 13.1900},
-        {'id': 29, 'name': 'Ramiros',    'population': 95000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -9.0200, 'lon': 13.2150},
+        {'id': 40, 'name': 'Belas Sede',      'population': 180000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -9.0860, 'lon': 13.2010},
+        {'id': 41, 'name': 'Benfica (Belas)', 'population': 140000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.9700, 'lon': 13.1880},
+        {'id': 42, 'name': 'Ramiros',         'population': 95000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -9.0200, 'lon': 13.2200},
+        {'id': 43, 'name': 'Futungo de Belas','population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -9.0020, 'lon': 13.1700},
     ],
+
+    # ── TALATONA ───────────────────────────────────────────────────────────────
+    'Talatona': [
+        {'id': 50, 'name': 'Talatona Sede',    'population': 120000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9600, 'lon': 13.1900},
+        {'id': 51, 'name': 'Nova Vida',        'population': 200000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9620, 'lon': 13.2220},
+        {'id': 52, 'name': 'Projecto Nova Vida','population': 150000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9480, 'lon': 13.2310},
+        {'id': 53, 'name': 'Morro Bento II',   'population': 100000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9390, 'lon': 13.2200},
+    ],
+
+    # ── MAIANGA ────────────────────────────────────────────────────────────────
     'Maianga': [
-        {'id': 200, 'name': 'Alvalade',                 'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8370, 'lon': 13.2290},
-        {'id': 201, 'name': 'Bairro Popular',           'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8450, 'lon': 13.2380},
-        {'id': 202, 'name': 'Cassenda',                 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8510, 'lon': 13.2430},
-        {'id': 203, 'name': 'Cassequel',                'population': 100000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8480, 'lon': 13.2360},
-        {'id': 204, 'name': 'Mártires do Kifangondo',   'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8540, 'lon': 13.2480},
-        {'id': 205, 'name': 'Prenda',                   'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8580, 'lon': 13.2550},
-        {'id': 206, 'name': 'Rocha Pinto',              'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8490, 'lon': 13.2500},
-        {'id': 207, 'name': 'Catambor',                 'population': 90000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8420, 'lon': 13.2420},
-        {'id': 208, 'name': 'Catinton',                 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8460, 'lon': 13.2460},
-        {'id': 209, 'name': 'Calemba',                  'population': 70000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8560, 'lon': 13.2350},
+        {'id': 60, 'name': 'Alvalade',               'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8375, 'lon': 13.2295},
+        {'id': 61, 'name': 'Bairro Popular',         'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8440, 'lon': 13.2400},
+        {'id': 62, 'name': 'Prenda',                 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8570, 'lon': 13.2560},
+        {'id': 63, 'name': 'Rocha Pinto',            'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8490, 'lon': 13.2500},
+        {'id': 64, 'name': 'Cassequel',              'population': 100000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8460, 'lon': 13.2360},
+        {'id': 65, 'name': 'Mártires do Kifangondo', 'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8540, 'lon': 13.2480},
+        {'id': 66, 'name': 'Calemba',                'population': 70000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8560, 'lon': 13.2350},
     ],
+
+    # ── RANGEL ─────────────────────────────────────────────────────────────────
     'Rangel': [
-        {'id': 300, 'name': 'Terra Nova',           'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8220, 'lon': 13.2640},
-        {'id': 301, 'name': 'Precol',               'population': 80000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8180, 'lon': 13.2580},
-        {'id': 302, 'name': 'Combatentes',          'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8250, 'lon': 13.2590},
-        {'id': 303, 'name': 'Valódia',              'population': 90000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8290, 'lon': 13.2610},
-        {'id': 304, 'name': 'Mabor',                'population': 70000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8260, 'lon': 13.2680},
-        {'id': 305, 'name': 'Cuca',                 'population': 60000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8200, 'lon': 13.2700},
-        {'id': 306, 'name': 'Triangulo',            'population': 50000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8150, 'lon': 13.2650},
-        {'id': 307, 'name': 'Comandante Valódia',   'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8310, 'lon': 13.2660},
-        {'id': 308, 'name': 'Lixeira',              'population': 95000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8170, 'lon': 13.2620},
-        {'id': 309, 'name': 'S. Pedro',             'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8330, 'lon': 13.2580},
+        {'id': 70, 'name': 'Terra Nova',         'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8215, 'lon': 13.2640},
+        {'id': 71, 'name': 'Precol',             'population': 80000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8170, 'lon': 13.2590},
+        {'id': 72, 'name': 'Combatentes',        'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8245, 'lon': 13.2600},
+        {'id': 73, 'name': 'Valódia',            'population': 90000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8290, 'lon': 13.2615},
+        {'id': 74, 'name': 'Mabor',              'population': 70000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8250, 'lon': 13.2690},
+        {'id': 75, 'name': 'Cuca',               'population': 60000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8200, 'lon': 13.2710},
+        {'id': 76, 'name': 'Comandante Valódia', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8310, 'lon': 13.2660},
+        {'id': 77, 'name': 'Lixeira (Rangel)',   'population': 95000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8165, 'lon': 13.2625},
     ],
+
+    # ── INGOMBOTA ──────────────────────────────────────────────────────────────
     'Ingombota': [
-        {'id': 400, 'name': 'Azul',             'population': 80000,  'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8120, 'lon': 13.2280},
-        {'id': 401, 'name': 'Boa Vista',        'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.8080, 'lon': 13.2230},
-        {'id': 402, 'name': 'Bungo',            'population': 70000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8100, 'lon': 13.2350},
-        {'id': 403, 'name': 'Chicala I',        'population': 50000,  'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8050, 'lon': 13.2380},
-        {'id': 404, 'name': 'Chicala II',       'population': 45000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8020, 'lon': 13.2410},
-        {'id': 405, 'name': 'Cidade Alta',      'population': 90000,  'type': 'Comercial',   'risk': 'Baixo',  'lat': -8.8180, 'lon': 13.2250},
-        {'id': 406, 'name': 'Coqueiros',        'population': 120000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8150, 'lon': 13.2200},
-        {'id': 407, 'name': 'Coreia',           'population': 100000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8200, 'lon': 13.2380},
-        {'id': 408, 'name': 'Cruzeiro',         'population': 85000,  'type': 'Comercial',   'risk': 'Médio',  'lat': -8.8160, 'lon': 13.2310},
-        {'id': 409, 'name': 'Patrice Lumumba',  'population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8220, 'lon': 13.2350},
+        {'id': 80, 'name': 'Cidade Alta',     'population': 90000,  'type': 'Comercial',   'risk': 'Baixo',  'lat': -8.8170, 'lon': 13.2240},
+        {'id': 81, 'name': 'Coqueiros',       'population': 120000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8145, 'lon': 13.2195},
+        {'id': 82, 'name': 'Cruzeiro',        'population': 85000,  'type': 'Comercial',   'risk': 'Médio',  'lat': -8.8155, 'lon': 13.2300},
+        {'id': 83, 'name': 'Patrice Lumumba', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8215, 'lon': 13.2345},
+        {'id': 84, 'name': 'Chicala',         'population': 80000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8030, 'lon': 13.2430},
+        {'id': 85, 'name': 'Boa Vista',       'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.8070, 'lon': 13.2220},
     ],
+
+    # ── SAMBA ──────────────────────────────────────────────────────────────────
     'Samba': [
-        {'id': 500, 'name': 'Rocha Pinto',  'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8600, 'lon': 13.2550},
-        {'id': 501, 'name': 'Prenda',       'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8650, 'lon': 13.2600},
-        {'id': 502, 'name': 'Gamek',        'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8700, 'lon': 13.2480},
-        {'id': 503, 'name': 'Morro Bento',  'population': 220000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8750, 'lon': 13.2420},
-        {'id': 504, 'name': 'Mabunda',      'population': 90000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8680, 'lon': 13.2380},
-        {'id': 505, 'name': 'Corimba',      'population': 120000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8580, 'lon': 13.2300},
-        {'id': 506, 'name': 'Bairro Azul',  'population': 100000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8720, 'lon': 13.2530},
-        {'id': 507, 'name': 'Samba Pequena','population': 80000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8800, 'lon': 13.2350},
-        {'id': 508, 'name': 'Coreia',       'population': 95000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8630, 'lon': 13.2450},
-        {'id': 509, 'name': 'Cassenda',     'population': 110000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8760, 'lon': 13.2600},
+        {'id': 90, 'name': 'Rocha Pinto (Samba)', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8640, 'lon': 13.2530},
+        {'id': 91, 'name': 'Gamek',               'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8710, 'lon': 13.2470},
+        {'id': 92, 'name': 'Corimba',             'population': 120000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8590, 'lon': 13.2280},
+        {'id': 93, 'name': 'Mabunda',             'population': 90000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8680, 'lon': 13.2370},
+        {'id': 94, 'name': 'Morro Bento',         'population': 220000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8760, 'lon': 13.2420},
+        {'id': 95, 'name': 'Samba Pequena',       'population': 80000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8820, 'lon': 13.2340},
     ],
+
+    # ── SAMBIZANGA ─────────────────────────────────────────────────────────────
     'Sambizanga': [
-        {'id': 600, 'name': 'Bairro Operário',      'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7980, 'lon': 13.2480},
-        {'id': 601, 'name': 'Ngola Kiluanje',        'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8020, 'lon': 13.2520},
-        {'id': 602, 'name': 'Miramar',               'population': 80000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7950, 'lon': 13.2420},
-        {'id': 603, 'name': 'Comandante Valódia',    'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8060, 'lon': 13.2560},
-        {'id': 604, 'name': 'Lixeira',               'population': 90000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8040, 'lon': 13.2500},
-        {'id': 605, 'name': 'S. Pedro',              'population': 70000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8080, 'lon': 13.2440},
-        {'id': 606, 'name': 'Petrangol',             'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8100, 'lon': 13.2580},
-        {'id': 607, 'name': 'Boavista',              'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.7920, 'lon': 13.2390},
-        {'id': 608, 'name': 'EMCIB',                 'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
-        {'id': 609, 'name': 'Uíge',                  'population': 95000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8090, 'lon': 13.2610},
+        {'id': 100, 'name': 'Bairro Operário',  'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7980, 'lon': 13.2490},
+        {'id': 101, 'name': 'Ngola Kiluanje',   'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8015, 'lon': 13.2530},
+        {'id': 102, 'name': 'Petrangol',        'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8100, 'lon': 13.2590},
+        {'id': 103, 'name': 'Miramar',          'population': 80000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7940, 'lon': 13.2420},
+        {'id': 104, 'name': 'Boavista',         'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.7910, 'lon': 13.2380},
+        {'id': 105, 'name': 'EMCIB',            'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
+    ],
+
+    # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
+    'Hoji Ya Henda': [
+        {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
+        {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
+        {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
+    ],
+
+    # ── KILAMBA ────────────────────────────────────────────────────────────────
+    'Kilamba': [
+        {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
+        {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
+        {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
+    ],
+
+    # ── CAMAMA ─────────────────────────────────────────────────────────────────
+    'Camama': [
+        {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
+        {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
+        {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
+    ],
+
+    # ── MULENVOS ───────────────────────────────────────────────────────────────
+    'Mulenvos': [
+        {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
+        {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
     ],
 }
 
 # ==================== CACHES ====================
 GADM_CACHE = {}
 ELEVATION_CACHE = {}
+
+# ==================== FUNÇÃO PARA POLÍGONO CIRCULAR (OPCIONAL) ====================
+def make_bairro_polygon(lat, lon, radius_km=0.65, n_points=36):
+    """Gera um polígono circular para o bairro (útil para visualização no mapa)"""
+    R = 6371.0
+    coords = []
+    for i in range(n_points):
+        angle = (2 * math.pi * i) / n_points
+        d_lat = (radius_km / R) * (180.0 / math.pi) * math.cos(angle)
+        d_lon = (radius_km / R) * (180.0 / math.pi) * math.sin(angle) / math.cos(math.radians(lat))
+        coords.append([round(lon + d_lon, 6), round(lat + d_lat, 6)])
+    coords.append(coords[0])
+    return {"type": "Polygon", "coordinates": [coords]}
 
 # ==================== FUNÇÕES DE ELEVAÇÃO ====================
 def get_elevation_batch(coordinates):
@@ -382,9 +420,9 @@ def home():
 def api_home():
     return jsonify({
         'message': 'API de Simulação de Inundações - Angola',
-        'version': '4.0.0',
+        'version': '4.1.0',
         'status': 'online',
-        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Bairros com Coordenadas Precisas'],
+        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Nova Divisão Geográfica de Angola (Lei 14/24)'],
         'endpoints': {
             'health':         '/api/health',
             'info':           '/api/info',
@@ -401,7 +439,7 @@ def api_home():
 def health():
     return jsonify({
         'status': 'ok',
-        'message': 'API activa — bairros com coordenadas precisas',
+        'message': 'API activa — Nova divisão geográfica de Angola',
         'timestamp': datetime.now().isoformat(),
         'cache_status': {
             'gadm_cached': len(GADM_CACHE),
@@ -414,8 +452,8 @@ def health():
 def api_info():
     return jsonify({
         'name': 'API de Simulação de Inundações - Angola',
-        'version': '4.0.0',
-        'description': 'API com coordenadas reais por bairro e elevação pontual',
+        'version': '4.1.0',
+        'description': 'API com coordenadas reais por bairro, elevação pontual e nova divisão geográfica',
         'data_available': {
             'provinces':     len(PROVINCES),
             'municipalities': sum(len(m) for m in MUNICIPALITIES.values()),
@@ -466,11 +504,17 @@ def get_municipalities():
 
     gdf = gdf[gdf['NAME_1'] == 'Luanda']
     gadm_to_static = {
-        'Belas': 'Belas', 'Cacuaco': 'Cacuaco', 'Cazenga': 'Cazenga',
-        'Icolo e Bengo': 'Icolo e Bengo', 'Luanda': 'Luanda', 'Quiçama': 'Quiçama',
-        'Viana': 'Viana', 'Kilamba-Kiaxi': 'Kilamba Kiaxi', 'Talatona': 'Talatona',
-        'Maianga': 'Maianga', 'Rangel': 'Rangel', 'Ingombota': 'Ingombota',
-        'Samba': 'Samba', 'Sambizanga': 'Sambizanga',
+        'Belas':         'Belas',
+        'Cacuaco':       'Cacuaco',
+        'Cazenga':       'Cazenga',
+        'Viana':         'Viana',
+        'Kilamba-Kiaxi': 'Kilamba Kiaxi',
+        'Talatona':      'Talatona',
+        'Maianga':       'Maianga',
+        'Rangel':        'Rangel',
+        'Ingombota':     'Ingombota',
+        'Samba':         'Samba',
+        'Sambizanga':    'Sambizanga',
     }
 
     municipalities = []
@@ -487,12 +531,21 @@ def get_municipalities():
                     'area': static_mun['area'], 'lat': centroid.y, 'lon': centroid.x,
                 })
 
-    if not any(m['name'] == 'Kilamba Kiaxi' for m in municipalities):
-        municipalities.append({
-            'id': 8, 'name': 'Kilamba Kiaxi', 'province': 'Luanda',
-            'risk': 'Muito Alto', 'population': 1800000, 'area': 189,
-            'lat': -8.92, 'lon': 13.28,
-        })
+    # Adiciona municípios que o GADM 4.1 ainda não tem como polígonos
+    fallbacks = [
+        {'id': 5,  'name': 'Kilamba Kiaxi', 'lat': -8.886,  'lon': 13.258,  'risk': 'Muito Alto', 'population': 1120000, 'area': 52},
+        {'id': 12, 'name': 'Hoji Ya Henda', 'lat': -8.808,  'lon': 13.294,  'risk': 'Muito Alto', 'population': 700000,  'area': 30},
+        {'id': 13, 'name': 'Kilamba',        'lat': -8.934,  'lon': 13.292,  'risk': 'Médio',      'population': 250000,  'area': 55},
+        {'id': 14, 'name': 'Camama',         'lat': -8.945,  'lon': 13.268,  'risk': 'Alto',       'population': 320000,  'area': 45},
+        {'id': 15, 'name': 'Mulenvos',       'lat': -8.781,  'lon': 13.269,  'risk': 'Alto',       'population': 180000,  'area': 20},
+    ]
+    for fb in fallbacks:
+        if not any(m['name'] == fb['name'] for m in municipalities):
+            municipalities.append({
+                'id': fb['id'], 'name': fb['name'], 'province': 'Luanda',
+                'risk': fb['risk'], 'population': fb['population'],
+                'area': fb['area'], 'lat': fb['lat'], 'lon': fb['lon'],
+            })
 
     return jsonify({'success': True, 'data': municipalities, 'count': len(municipalities), 'timestamp': datetime.now().isoformat()})
 
@@ -587,7 +640,6 @@ def simulate_flood():
 
             bairros_list = list(BAIRROS[matching_key])
 
-            # ── Filtrar bairro específico ──────────────────────────
             if bairro_sel and bairro_sel != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro_sel]
                 if not bairros_list:
@@ -605,7 +657,6 @@ def simulate_flood():
                 risk        = bairro_data['risk']
                 pop         = bairro_data['population']
 
-                # ── Elevação real do ponto exato do bairro ─────────
                 b_lat = bairro_data['lat']
                 b_lon = bairro_data['lon']
                 elevation_stats = get_point_elevation(b_lat, b_lon)
@@ -642,12 +693,12 @@ def simulate_flood():
                 }
                 results.append(result_data)
 
-                # GeoJSON: marcador ponto exacto do bairro
+                # Usando Point em vez de Polygon (mantendo compatibilidade)
                 features.append({
                     'type': 'Feature',
                     'geometry': {
                         'type': 'Point',
-                        'coordinates': [b_lon, b_lat],   # GeoJSON usa [lon, lat]
+                        'coordinates': [b_lon, b_lat],
                     },
                     'properties': result_data,
                 })
@@ -783,12 +834,4 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("\n" + "=" * 70)
-    print("API de Simulação de Inundações — Angola v4.0")
-    print("=" * 70)
-    print(f"Servidor : http://0.0.0.0:5000")
-    print(f"Províncias: {len(PROVINCES)}")
-    print(f"Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
-    print(f"Bairros   : {sum(len(b) for b in BAIRROS.values())} (com coordenadas reais)")
-    print("=" * 70 + "\n")
     app.run(debug=True, host='0.0.0.0', port=5000)
