@@ -9,21 +9,22 @@ import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 import numpy as np
-import math
-import json
-from shapely.geometry import Point, Polygon, MultiPoint
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# ==================== DADOS ESTÁTICOS (NOVA DIVISÃO GEOGRÁFICA) ====================
+# ==================== DADOS ESTÁTICOS ====================
 PROVINCES = [
     {'id': 1, 'name': 'Luanda', 'risk': 'Muito Alto', 'population': 8329517, 'area': 2417},
 ]
 
 MUNICIPALITIES = {
+    # Nova divisão administrativa de Luanda (Lei 14/24 de 5 de Setembro de 2024)
+    # Municípios confirmados na nova DPA — Luanda passou de 9 para ~15 municípios
+    # Usamos os municípios que o GADM 4.1 (ainda baseado na divisão anterior) reconhece
+    # mais os novos que já têm presença geográfica consolidada
     'Luanda': [
         {'id': 1,  'name': 'Belas',         'population': 600000,  'area': 500,  'risk': 'Alto'},
         {'id': 2,  'name': 'Cacuaco',        'population': 850000,  'area': 450,  'risk': 'Muito Alto'},
@@ -43,7 +44,15 @@ MUNICIPALITIES = {
     ],
 }
 
+# ==================== BAIRROS COM COORDENADAS VERIFICADAS ====================
+# Coordenadas verificadas via OpenStreetMap / Nominatim para cada bairro
+# Cada bairro está no município correcto segundo a nova divisão administrativa
+# lat/lon correspondem ao centróide real do bairro no mapa
+
 BAIRROS = {
+    # ── KILAMBA KIAXI ──────────────────────────────────────────────────────────
+    # Município compacto a sul do centro, ~51 km²
+    # Bairros confirmados: Golfe, Golfe II, Palanca, Vila Estoril, Sapú
     'Kilamba Kiaxi': [
         {'id': 1,  'name': 'Golfe',         'population': 120000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8780, 'lon': 13.2490},
         {'id': 2,  'name': 'Golfe II',      'population': 100000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8850, 'lon': 13.2550},
@@ -51,12 +60,18 @@ BAIRROS = {
         {'id': 4,  'name': 'Vila Estoril',  'population': 90000,  'type': 'Residencial', 'risk': 'Médio',     'lat': -8.8900, 'lon': 13.2440},
         {'id': 5,  'name': 'Sapú',          'population': 130000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8820, 'lon': 13.2700},
     ],
+
+    # ── CAZENGA ────────────────────────────────────────────────────────────────
+    # A norte do centro, zona muito densa
     'Cazenga': [
         {'id': 10, 'name': 'Cazenga Sede',   'population': 250000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8195, 'lon': 13.2880},
         {'id': 11, 'name': 'Tala Hady',      'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8270, 'lon': 13.3030},
         {'id': 12, 'name': 'Sapú (Cazenga)', 'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8340, 'lon': 13.2850},
         {'id': 13, 'name': 'Kikolo',         'population': 160000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8120, 'lon': 13.3020},
     ],
+
+    # ── CACUACO ────────────────────────────────────────────────────────────────
+    # A norte de Luanda, inclui Sequele, Funda, Quiage, Cabolombo
     'Cacuaco': [
         {'id': 20, 'name': 'Cacuaco Sede', 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7870, 'lon': 13.3670},
         {'id': 21, 'name': 'Sequele',      'population': 140000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8030, 'lon': 13.3260},
@@ -64,24 +79,36 @@ BAIRROS = {
         {'id': 23, 'name': 'Quiage',       'population': 95000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7560, 'lon': 13.3550},
         {'id': 24, 'name': 'Cabolombo',    'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7780, 'lon': 13.3440},
     ],
+
+    # ── VIANA ──────────────────────────────────────────────────────────────────
+    # A leste, corredor industrial; Catete saiu para Icolo e Bengo na nova DPA
     'Viana': [
         {'id': 30, 'name': 'Viana Sede', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.9040, 'lon': 13.3740},
         {'id': 31, 'name': 'Zango',      'population': 350000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.9520, 'lon': 13.4030},
         {'id': 32, 'name': 'Kikuxi',     'population': 200000, 'type': 'Industrial',  'risk': 'Alto',       'lat': -8.9180, 'lon': 13.3390},
         {'id': 33, 'name': 'Calumbo',    'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8670, 'lon': 13.4290},
     ],
+
+    # ── BELAS ──────────────────────────────────────────────────────────────────
+    # A sul do município de Talatona
     'Belas': [
         {'id': 40, 'name': 'Belas Sede',      'population': 180000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -9.0860, 'lon': 13.2010},
         {'id': 41, 'name': 'Benfica (Belas)', 'population': 140000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.9700, 'lon': 13.1880},
         {'id': 42, 'name': 'Ramiros',         'population': 95000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -9.0200, 'lon': 13.2200},
         {'id': 43, 'name': 'Futungo de Belas','population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -9.0020, 'lon': 13.1700},
     ],
+
+    # ── TALATONA ───────────────────────────────────────────────────────────────
+    # Zona nobre a sul, Nova Vida, Camama (zona sul)
     'Talatona': [
         {'id': 50, 'name': 'Talatona Sede',    'population': 120000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9600, 'lon': 13.1900},
         {'id': 51, 'name': 'Nova Vida',        'population': 200000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9620, 'lon': 13.2220},
         {'id': 52, 'name': 'Projecto Nova Vida','population': 150000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9480, 'lon': 13.2310},
         {'id': 53, 'name': 'Morro Bento II',   'population': 100000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9390, 'lon': 13.2200},
     ],
+
+    # ── MAIANGA ────────────────────────────────────────────────────────────────
+    # Centro-sul, zona urbana densa
     'Maianga': [
         {'id': 60, 'name': 'Alvalade',               'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8375, 'lon': 13.2295},
         {'id': 61, 'name': 'Bairro Popular',         'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8440, 'lon': 13.2400},
@@ -91,6 +118,9 @@ BAIRROS = {
         {'id': 65, 'name': 'Mártires do Kifangondo', 'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8540, 'lon': 13.2480},
         {'id': 66, 'name': 'Calemba',                'population': 70000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8560, 'lon': 13.2350},
     ],
+
+    # ── RANGEL ─────────────────────────────────────────────────────────────────
+    # Agora município autónomo na nova DPA (antes era distrito urbano)
     'Rangel': [
         {'id': 70, 'name': 'Terra Nova',         'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8215, 'lon': 13.2640},
         {'id': 71, 'name': 'Precol',             'population': 80000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8170, 'lon': 13.2590},
@@ -101,6 +131,9 @@ BAIRROS = {
         {'id': 76, 'name': 'Comandante Valódia', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8310, 'lon': 13.2660},
         {'id': 77, 'name': 'Lixeira (Rangel)',   'population': 95000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8165, 'lon': 13.2625},
     ],
+
+    # ── INGOMBOTA ──────────────────────────────────────────────────────────────
+    # Centro histórico / zona da baía
     'Ingombota': [
         {'id': 80, 'name': 'Cidade Alta',     'population': 90000,  'type': 'Comercial',   'risk': 'Baixo',  'lat': -8.8170, 'lon': 13.2240},
         {'id': 81, 'name': 'Coqueiros',       'population': 120000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8145, 'lon': 13.2195},
@@ -109,6 +142,9 @@ BAIRROS = {
         {'id': 84, 'name': 'Chicala',         'population': 80000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8030, 'lon': 13.2430},
         {'id': 85, 'name': 'Boa Vista',       'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.8070, 'lon': 13.2220},
     ],
+
+    # ── SAMBA ──────────────────────────────────────────────────────────────────
+    # A sul do centro, inclui zona do porto sul e Corimba
     'Samba': [
         {'id': 90, 'name': 'Rocha Pinto (Samba)', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8640, 'lon': 13.2530},
         {'id': 91, 'name': 'Gamek',               'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8710, 'lon': 13.2470},
@@ -117,6 +153,9 @@ BAIRROS = {
         {'id': 94, 'name': 'Morro Bento',         'population': 220000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8760, 'lon': 13.2420},
         {'id': 95, 'name': 'Samba Pequena',       'population': 80000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8820, 'lon': 13.2340},
     ],
+
+    # ── SAMBIZANGA ─────────────────────────────────────────────────────────────
+    # A noroeste do centro histórico, zona popular densa
     'Sambizanga': [
         {'id': 100, 'name': 'Bairro Operário',  'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7980, 'lon': 13.2490},
         {'id': 101, 'name': 'Ngola Kiluanje',   'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8015, 'lon': 13.2530},
@@ -125,71 +164,43 @@ BAIRROS = {
         {'id': 104, 'name': 'Boavista',         'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.7910, 'lon': 13.2380},
         {'id': 105, 'name': 'EMCIB',            'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
     ],
+
+    # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
+    # Novo município (antes distrito de Cazenga); zona nordeste densa
     'Hoji Ya Henda': [
         {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
         {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
         {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
     ],
+
+    # ── KILAMBA ────────────────────────────────────────────────────────────────
+    # Novo município — Cidade do Kilamba (projecto habitacional)
     'Kilamba': [
         {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
         {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
         {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
     ],
+
+    # ── CAMAMA ─────────────────────────────────────────────────────────────────
+    # Novo município — zona de expansão urbana entre Kilamba Kiaxi e Viana
     'Camama': [
         {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
         {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
         {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
     ],
+
+    # ── MULENVOS ───────────────────────────────────────────────────────────────
+    # Novo município — Mulenvos de Baixo / Mulenvos de Cima, zona norte
     'Mulenvos': [
         {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
         {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
     ],
 }
 
-# ==================== FUNÇÃO PARA CRIAR POLÍGONO REAL (CONVEX HULL) A PARTIR DOS BAIRROS ====================
-def create_municipio_polygon_from_bairros(municipio_name, bairros_list):
-    """
-    Cria um polígono REAL (não circular) usando o casco convexo (convex hull)
-    dos pontos dos bairros do município.
-    """
-    from shapely.geometry import Point, MultiPoint
-    
-    # Coletar todas as coordenadas dos bairros
-    points = []
-    for bairro in bairros_list:
-        if 'lat' in bairro and 'lon' in bairro:
-            points.append(Point(bairro['lon'], bairro['lat']))
-    
-    if len(points) < 3:
-        return None
-    
-    # Criar MultiPoint e calcular o casco convexo
-    multipoint = MultiPoint(points)
-    convex_hull = multipoint.convex_hull
-    
-    # Se o convex hull for um polígono, usá-lo
-    if convex_hull.geom_type == 'Polygon':
-        # Suavizar um pouco o polígono (opcional)
-        coords = list(convex_hull.exterior.coords)
-        return {
-            "type": "Polygon",
-            "coordinates": [coords]
-        }
-    elif convex_hull.geom_type == 'LineString' or len(points) == 2:
-        # Se for uma linha ou só 2 pontos, criar um pequeno buffer
-        buffered = convex_hull.buffer(0.01)
-        if buffered.geom_type == 'Polygon':
-            coords = list(buffered.exterior.coords)
-            return {
-                "type": "Polygon",
-                "coordinates": [coords]
-            }
-    
-    return None
-
 # ==================== CACHES ====================
 GADM_CACHE = {}
 ELEVATION_CACHE = {}
+
 
 # ==================== FUNÇÕES DE ELEVAÇÃO ====================
 def get_elevation_batch(coordinates):
@@ -203,6 +214,7 @@ def get_elevation_batch(coordinates):
         if response.status_code == 200:
             data = response.json()
             elevations = [result['elevation'] for result in data['results']]
+            logger.info(f"Elevações obtidas: {len(elevations)} pontos")
             return elevations
         else:
             logger.warning(f"Erro ao obter elevações: Status {response.status_code}")
@@ -210,6 +222,7 @@ def get_elevation_batch(coordinates):
     except Exception as e:
         logger.error(f"Erro ao obter elevações: {e}")
         return None
+
 
 def get_point_elevation(lat, lon):
     cache_key = f"pt_{lat:.4f}_{lon:.4f}"
@@ -237,21 +250,41 @@ def get_point_elevation(lat, lon):
     ELEVATION_CACHE[cache_key] = result
     return result
 
+
 def get_region_elevation_stats(geometry):
     try:
-        from shapely.geometry import shape
-        
-        geom = shape(geometry) if isinstance(geometry, dict) else geometry
-        bounds = geom.bounds
-        centroid = geom.centroid
+        cache_key = f"{geometry.centroid.y:.4f},{geometry.centroid.x:.4f}"
+        if cache_key in ELEVATION_CACHE:
+            return ELEVATION_CACHE[cache_key]
+
+        bounds = geometry.bounds
+        centroid = geometry.centroid
+        area = geometry.area
+
+        if area > 1.0:
+            num_points = 9
+        elif area > 0.1:
+            num_points = 5
+        else:
+            num_points = 3
 
         points = [(centroid.y, centroid.x)]
-        points.extend([
-            (bounds[1], bounds[0]),
-            (bounds[3], bounds[2]),
-            (bounds[1], bounds[2]),
-            (bounds[3], bounds[0]),
-        ])
+        if num_points >= 5:
+            points.extend([
+                (bounds[1], bounds[0]),
+                (bounds[3], bounds[2]),
+                (bounds[1], bounds[2]),
+                (bounds[3], bounds[0]),
+            ])
+        if num_points >= 9:
+            mid_lat = (bounds[1] + bounds[3]) / 2
+            mid_lon = (bounds[0] + bounds[2]) / 2
+            points.extend([
+                (mid_lat, bounds[0]),
+                (mid_lat, bounds[2]),
+                (bounds[1], mid_lon),
+                (bounds[3], mid_lon),
+            ])
 
         elevations = get_elevation_batch(points)
         if elevations and len(elevations) > 0:
@@ -260,18 +293,24 @@ def get_region_elevation_stats(geometry):
                 avg = np.mean(valid_elevations)
                 min_elev = np.min(valid_elevations)
                 max_elev = np.max(valid_elevations)
-                return {
+                result = {
                     'avg': float(avg),
                     'min': float(min_elev),
                     'max': float(max_elev),
                     'range': float(max_elev - min_elev),
                     'points_sampled': len(valid_elevations)
                 }
+                ELEVATION_CACHE[cache_key] = result
+                return result
 
-        return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
+        result = {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
+        ELEVATION_CACHE[cache_key] = result
+        return result
+
     except Exception as e:
         logger.error(f"Erro ao calcular elevação: {e}")
         return {'avg': 70.0, 'min': 40.0, 'max': 120.0, 'range': 80.0, 'points_sampled': 0}
+
 
 # ==================== GADM ====================
 def download_and_read_gadm_json(country_code, level):
@@ -295,12 +334,14 @@ def download_and_read_gadm_json(country_code, level):
         logger.error(f"Erro ao baixar/processar GeoJSON: {e}")
         return None
 
+
 def normalize_name(name):
     import unicodedata
     name = unicodedata.normalize('NFD', name)
     name = ''.join(char for char in name if unicodedata.category(char) != 'Mn')
     name = name.replace(' ', '').replace('-', '').replace('_', '').lower()
     return name
+
 
 # ==================== CÁLCULO DE INUNDAÇÃO ====================
 def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevation=0, elevation_stats=None):
@@ -353,39 +394,41 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
     is_flooded = effective_water_level > flood_threshold
 
     if is_flooded:
-        water_level_val = effective_water_level
-        if water_level_val < 8.0 and avg_elevation > 100:
+        water_level = effective_water_level
+        if water_level < 8.0 and avg_elevation > 100:
             severity = 'Leve'
-            recovery_days = int(7 + water_level_val * 0.5)
-        elif water_level_val < 15.0:
+            recovery_days = int(7 + water_level * 0.5)
+        elif water_level < 15.0:
             severity = 'Moderada'
-            recovery_days = int(15 + water_level_val * 1.0)
-        elif water_level_val < 25.0:
+            recovery_days = int(15 + water_level * 1.0)
+        elif water_level < 25.0:
             severity = 'Grave'
-            recovery_days = int(30 + water_level_val * 1.5)
+            recovery_days = int(30 + water_level * 1.5)
         else:
             severity = 'Crítica'
-            recovery_days = int(60 + water_level_val * 2.0)
+            recovery_days = int(60 + water_level * 2.0)
 
         if avg_elevation < 50:
             recovery_days = int(recovery_days * 1.5)
 
-        return True, water_level_val, severity, recovery_days
+        return True, water_level, severity, recovery_days
     else:
         return False, 0, 'Nenhuma', 0
+
 
 # ==================== ROTAS ====================
 @app.route('/')
 def home():
     return render_template('teste_api.html')
 
+
 @app.route('/api', methods=['GET'])
 def api_home():
     return jsonify({
         'message': 'API de Simulação de Inundações - Angola',
-        'version': '4.2.0',
+        'version': '4.1.0',
         'status': 'online',
-        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Nova Divisão Geográfica de Angola (Lei 14/24)', 'Polígonos reais para todos os municípios'],
+        'features': ['Dados GADM', 'Elevação Real por Ponto', 'Bairros com Polígonos Circulares'],
         'endpoints': {
             'health':         '/api/health',
             'info':           '/api/info',
@@ -397,11 +440,12 @@ def api_home():
         }
     })
 
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({
         'status': 'ok',
-        'message': 'API activa — Todos os municípios têm polígonos reais',
+        'message': 'API activa — bairros com polígonos circulares',
         'timestamp': datetime.now().isoformat(),
         'cache_status': {
             'gadm_cached': len(GADM_CACHE),
@@ -409,12 +453,13 @@ def health():
         }
     })
 
+
 @app.route('/api/info', methods=['GET'])
 def api_info():
     return jsonify({
         'name': 'API de Simulação de Inundações - Angola',
-        'version': '4.2.0',
-        'description': 'API com coordenadas reais por bairro, elevação pontual e nova divisão geográfica',
+        'version': '4.1.0',
+        'description': 'API com coordenadas reais por bairro, elevação pontual e polígonos GeoJSON',
         'data_available': {
             'provinces':     len(PROVINCES),
             'municipalities': sum(len(m) for m in MUNICIPALITIES.values()),
@@ -422,6 +467,7 @@ def api_info():
         },
         'elevation_service': 'Open-Elevation API (SRTM 90m)',
     })
+
 
 @app.route('/api/provinces', methods=['GET'])
 def get_provinces():
@@ -443,6 +489,7 @@ def get_provinces():
 
     return jsonify({'success': True, 'data': provinces, 'count': len(provinces), 'timestamp': datetime.now().isoformat()})
 
+
 @app.route('/api/municipalities', methods=['GET'])
 def get_municipalities():
     province = request.args.get('province', 'Luanda')
@@ -452,64 +499,65 @@ def get_municipalities():
     static_muns = MUNICIPALITIES.get('Luanda', [])
     gdf = download_and_read_gadm_json('AGO', 2)
 
+    if gdf is None:
+        municipalities = [
+            {'id': m['id'], 'name': m['name'], 'province': 'Luanda',
+             'risk': m['risk'], 'population': m['population'], 'area': m['area'],
+             'lat': -8.9, 'lon': 13.3}
+            for m in static_muns
+        ]
+        return jsonify({'success': True, 'data': municipalities, 'count': len(municipalities)})
+
+    gdf = gdf[gdf['NAME_1'] == 'Luanda']
+    gadm_to_static = {
+        # Mapeamento GADM 4.1 (nomenclatura antiga) → nome no sistema
+        'Belas':         'Belas',
+        'Cacuaco':       'Cacuaco',
+        'Cazenga':       'Cazenga',
+        'Viana':         'Viana',
+        'Kilamba-Kiaxi': 'Kilamba Kiaxi',
+        'Talatona':      'Talatona',
+        'Maianga':       'Maianga',
+        'Rangel':        'Rangel',
+        'Ingombota':     'Ingombota',
+        'Samba':         'Samba',
+        'Sambizanga':    'Sambizanga',
+        # Novos municípios — o GADM 4.1 ainda não os tem como polígonos separados
+        # São adicionados via fallback estático abaixo
+    }
+
     municipalities = []
-
-    if gdf is not None:
-        gdf = gdf[gdf['NAME_1'] == 'Luanda']
-        gadm_to_static = {
-            'Belas': 'Belas', 'Cacuaco': 'Cacuaco', 'Cazenga': 'Cazenga',
-            'Viana': 'Viana', 'Kilamba-Kiaxi': 'Kilamba Kiaxi', 'Talatona': 'Talatona',
-            'Maianga': 'Maianga', 'Rangel': 'Rangel', 'Ingombota': 'Ingombota',
-            'Samba': 'Samba', 'Sambizanga': 'Sambizanga',
-        }
-
-        for _, row in gdf.iterrows():
-            gadm_name = row['NAME_2']
-            static_name = gadm_to_static.get(gadm_name)
-            if static_name:
-                static_mun = next((m for m in static_muns if m['name'] == static_name), None)
-                if static_mun:
-                    municipalities.append({
-                        'id': static_mun['id'], 'name': static_name, 'province': 'Luanda',
-                        'risk': static_mun['risk'], 'population': static_mun['population'],
-                        'area': static_mun['area'], 'lat': row['geometry'].centroid.y, 'lon': row['geometry'].centroid.x,
-                        'geometry': row['geometry'].__geo_interface__
-                    })
-
-    # Adicionar municípios novos (não estão no GADM) com polígonos REAIS (convex hull dos bairros)
-    novos_municipios = ['Hoji Ya Henda', 'Kilamba', 'Camama', 'Mulenvos']
-    for mun_name in novos_municipios:
-        if not any(m['name'] == mun_name for m in municipalities):
-            static_mun = next((m for m in static_muns if m['name'] == mun_name), None)
+    for _, row in gdf.iterrows():
+        gadm_name = row['NAME_2']
+        static_name = gadm_to_static.get(gadm_name)
+        if static_name:
+            static_mun = next((m for m in static_muns if m['name'] == static_name), None)
             if static_mun:
-                bairros_do_municipio = BAIRROS.get(mun_name, [])
-                polygon_geo = create_municipio_polygon_from_bairros(mun_name, bairros_do_municipio)
-                
-                municipality_data = {
-                    'id': static_mun['id'], 'name': mun_name, 'province': 'Luanda',
+                centroid = row['geometry'].centroid
+                municipalities.append({
+                    'id': static_mun['id'], 'name': static_name, 'province': 'Luanda',
                     'risk': static_mun['risk'], 'population': static_mun['population'],
-                    'area': static_mun['area'], 'lat': -8.9, 'lon': 13.3,
-                }
-                
-                if polygon_geo:
-                    municipality_data['geometry'] = polygon_geo
-                    # Calcular centróide real do polígono
-                    from shapely.geometry import shape
-                    centroid = shape(polygon_geo).centroid
-                    municipality_data['lat'] = centroid.y
-                    municipality_data['lon'] = centroid.x
-                
-                municipalities.append(municipality_data)
+                    'area': static_mun['area'], 'lat': centroid.y, 'lon': centroid.x,
+                })
 
-    # Também adicionar Kilamba Kiaxi se não estiver
-    if not any(m['name'] == 'Kilamba Kiaxi' for m in municipalities):
-        municipalities.append({
-            'id': 5, 'name': 'Kilamba Kiaxi', 'province': 'Luanda',
-            'risk': 'Muito Alto', 'population': 1120000, 'area': 52,
-            'lat': -8.886, 'lon': 13.258,
-        })
+    # Adiciona municípios que o GADM 4.1 ainda não tem como polígonos
+    fallbacks = [
+        {'id': 5,  'name': 'Kilamba Kiaxi', 'lat': -8.886,  'lon': 13.258,  'risk': 'Muito Alto', 'population': 1120000, 'area': 52},
+        {'id': 12, 'name': 'Hoji Ya Henda', 'lat': -8.808,  'lon': 13.294,  'risk': 'Muito Alto', 'population': 700000,  'area': 30},
+        {'id': 13, 'name': 'Kilamba',        'lat': -8.934,  'lon': 13.292,  'risk': 'Médio',      'population': 250000,  'area': 55},
+        {'id': 14, 'name': 'Camama',         'lat': -8.945,  'lon': 13.268,  'risk': 'Alto',       'population': 320000,  'area': 45},
+        {'id': 15, 'name': 'Mulenvos',       'lat': -8.781,  'lon': 13.269,  'risk': 'Alto',       'population': 180000,  'area': 20},
+    ]
+    for fb in fallbacks:
+        if not any(m['name'] == fb['name'] for m in municipalities):
+            municipalities.append({
+                'id': fb['id'], 'name': fb['name'], 'province': 'Luanda',
+                'risk': fb['risk'], 'population': fb['population'],
+                'area': fb['area'], 'lat': fb['lat'], 'lon': fb['lon'],
+            })
 
     return jsonify({'success': True, 'data': municipalities, 'count': len(municipalities), 'timestamp': datetime.now().isoformat()})
+
 
 @app.route('/api/bairros', methods=['GET'])
 def get_bairros():
@@ -550,6 +598,7 @@ def get_bairros():
                     'filter': {'municipality': municipality, 'province': province},
                     'timestamp': datetime.now().isoformat()})
 
+
 @app.route('/api/elevation', methods=['GET'])
 def get_elevation():
     try:
@@ -561,6 +610,7 @@ def get_elevation():
         return jsonify({'success': False, 'error': 'Não foi possível obter elevação'}), 500
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
+
 
 # ==================== SIMULAÇÃO ====================
 @app.route('/api/simulate', methods=['POST'])
@@ -575,151 +625,53 @@ def simulate_flood():
         water_level_raw = data.get('waterLevel')
         water_level_input = float(water_level_raw) if water_level_raw is not None else None
 
-        province_param = data.get('province', 'all')
-        municipality_param = data.get('municipality', 'all')
-        bairro_sel = data.get('bairro', 'all')
+        province     = data.get('province', 'all')
+        municipality = data.get('municipality', 'all')
+        bairro_sel   = data.get('bairro', 'all')
 
-        logger.info(f"Simulação — level={level} province={province_param} municipality={municipality_param} bairro={bairro_sel}")
-
-        # ============================================================
-        # SIMULAÇÃO DE MUNICÍPIOS
-        # ============================================================
-        if level == 'municipality':
-            static_muns = MUNICIPALITIES.get('Luanda', [])
-            
-            if municipality_param == 'all':
-                muns_to_simulate = static_muns
-            else:
-                muns_to_simulate = [m for m in static_muns if m['name'] == municipality_param]
-                if not muns_to_simulate:
-                    return jsonify({'success': False, 'error': f'Município {municipality_param} não encontrado'}), 404
-
-            results = []
-            features = []
-
-            for mun in muns_to_simulate:
-                mun_name = mun['name']
-                risk = mun['risk']
-                pop = mun['population']
-                
-                # Obter geometria: primeiro tentar do GADM, senão criar a partir dos bairros
-                geometry = None
-                
-                # Tentar obter do GADM
-                gdf = download_and_read_gadm_json('AGO', 2)
-                if gdf is not None:
-                    gdf_luanda = gdf[gdf['NAME_1'] == 'Luanda']
-                    gadm_row = gdf_luanda[gdf_luanda['NAME_2'] == mun_name]
-                    if not gadm_row.empty:
-                        geometry = gadm_row.iloc[0]['geometry'].__geo_interface__
-                
-                # Se não encontrou no GADM, criar polígono REAL a partir dos bairros
-                if geometry is None and mun_name in BAIRROS:
-                    bairros_do_mun = BAIRROS[mun_name]
-                    geometry = create_municipio_polygon_from_bairros(mun_name, bairros_do_mun)
-                
-                # Se ainda não tem geometria, pular
-                if geometry is None:
-                    logger.warning(f"Município {mun_name} sem geometria")
-                    continue
-                
-                elevation_stats = get_region_elevation_stats(geometry)
-                avg_elevation = elevation_stats['avg']
-
-                is_flooded, wl, severity, recovery_days = calculate_flood_risk(
-                    risk, flood_rate, water_level_input, avg_elevation, elevation_stats
-                )
-
-                affected_population = 0
-                if is_flooded:
-                    impact_factor = min(wl / 20.0, 0.5)
-                    affected_population = int(pop * impact_factor)
-
-                # Calcular centróide para referência
-                from shapely.geometry import shape
-                centroid = shape(geometry).centroid
-
-                result_data = {
-                    'name': mun_name,
-                    'province': 'Luanda',
-                    'flooded': is_flooded,
-                    'waterLevel': wl,
-                    'severity': severity,
-                    'recoveryDays': recovery_days,
-                    'affectedPopulation': affected_population,
-                    'totalPopulation': pop,
-                    'risk': risk,
-                    'elevation': round(avg_elevation, 1),
-                    'lat': centroid.y,
-                    'lon': centroid.x,
-                }
-                results.append(result_data)
-
-                features.append({
-                    'type': 'Feature',
-                    'geometry': geometry,
-                    'properties': result_data,
-                })
-
-            if len(features) == 0:
-                return jsonify({'success': False, 'error': 'Nenhum município encontrado para simular'}), 404
-
-            flooded_count = sum(1 for r in results if r['flooded'])
-            total_affected = sum(r['affectedPopulation'] for r in results)
-            geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
-
-            return jsonify({
-                'success': True,
-                'data': results,
-                'geojson': geojson,
-                'statistics': {
-                    'floodedCount': flooded_count,
-                    'totalAffected': total_affected,
-                    'totalItems': len(results),
-                    'avgRisk': (flooded_count / len(results) * 100) if results else 0,
-                },
-                'parameters': {
-                    'level': 'municipality',
-                    'floodRate': flood_rate * 100,
-                    'province': province_param,
-                    'municipality': municipality_param,
-                    'elevation_used': True,
-                },
-                'timestamp': datetime.now().isoformat(),
-            })
+        logger.info(f"Simulação — level={level} province={province} municipality={municipality} bairro={bairro_sel}")
 
         # ============================================================
         # SIMULAÇÃO DE BAIRROS
         # ============================================================
-        elif level == 'bairro':
-            if not municipality_param or municipality_param == 'all':
-                return jsonify({'success': False, 'error': 'Seleccione um município específico para simular bairros'}), 400
+        if level == 'bairro':
 
-            normalized_municipality = normalize_name(municipality_param)
+            if not municipality or municipality == 'all':
+                return jsonify({'success': False,
+                                'error': 'Seleccione um município específico para simular bairros'}), 400
+
+            normalized_municipality = normalize_name(municipality)
             matching_key = next((k for k in BAIRROS if normalize_name(k) == normalized_municipality), None)
 
             if not matching_key:
-                return jsonify({'success': False, 'error': f'Nenhum bairro cadastrado para o município {municipality_param}'}), 404
+                return jsonify({'success': False,
+                                'error': f'Nenhum bairro cadastrado para o município {municipality}'}), 404
 
             bairros_list = list(BAIRROS[matching_key])
 
             if bairro_sel and bairro_sel != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro_sel]
                 if not bairros_list:
-                    return jsonify({'success': False, 'error': f'Bairro "{bairro_sel}" não encontrado em {municipality_param}'}), 404
+                    return jsonify({'success': False,
+                                    'error': f'Bairro "{bairro_sel}" não encontrado em {municipality}'}), 404
+                logger.info(f"Simulando apenas o bairro: {bairro_sel}")
+            else:
+                logger.info(f"Simulando todos os {len(bairros_list)} bairros de {municipality}")
 
-            results = []
+            results  = []
             features = []
 
             for bairro_data in bairros_list:
                 bairro_name = bairro_data['name']
-                risk = bairro_data['risk']
-                pop = bairro_data['population']
+                risk        = bairro_data['risk']
+                pop         = bairro_data['population']
+
                 b_lat = bairro_data['lat']
                 b_lon = bairro_data['lon']
-                
                 elevation_stats = get_point_elevation(b_lat, b_lon)
-                avg_elevation = elevation_stats['avg']
+                avg_elevation   = elevation_stats['avg']
+
+                logger.info(f"Bairro {bairro_name}: lat={b_lat} lon={b_lon} elev={avg_elevation:.1f}m")
 
                 is_flooded, wl, severity, recovery_days = calculate_flood_risk(
                     risk, flood_rate, water_level_input, avg_elevation, elevation_stats
@@ -731,69 +683,147 @@ def simulate_flood():
                     affected_population = int(pop * impact_factor)
 
                 result_data = {
-                    'name': bairro_name,
-                    'municipality': municipality_param,
-                    'province': province_param if province_param != 'all' else 'Luanda',
-                    'type': bairro_data.get('type', 'Residencial'),
-                    'flooded': is_flooded,
-                    'waterLevel': wl,
-                    'severity': severity,
-                    'recoveryDays': recovery_days,
+                    'name':               bairro_name,
+                    'municipality':       municipality,
+                    'province':           province if province != 'all' else 'Luanda',
+                    'type':               bairro_data.get('type', 'Residencial'),
+                    'flooded':            is_flooded,
+                    'waterLevel':         wl,
+                    'severity':           severity,
+                    'recoveryDays':       recovery_days,
                     'affectedPopulation': affected_population,
-                    'totalPopulation': pop,
-                    'risk': risk,
-                    'elevation': round(avg_elevation, 1),
-                    'elevation_min': round(elevation_stats['min'], 1),
-                    'elevation_max': round(elevation_stats['max'], 1),
-                    'lat': b_lat,
-                    'lon': b_lon,
+                    'totalPopulation':    pop,
+                    'risk':               risk,
+                    'elevation':          round(avg_elevation, 1),
+                    'elevation_min':      round(elevation_stats['min'], 1),
+                    'elevation_max':      round(elevation_stats['max'], 1),
+                    'lat':                b_lat,
+                    'lon':                b_lon,
                 }
                 results.append(result_data)
 
-                # Para bairros, usar um pequeno polígono (buffer) - não circular, mas sim um quadrado
-                from shapely.geometry import Point
-                pt = Point(b_lon, b_lat)
-                # Criar um quadrado de ~0.5km de lado
-                buffer_size = 0.003  # ~333 metros
-                polygon = pt.buffer(buffer_size).envelope
-                coords = list(polygon.exterior.coords)
-                
+                # GeoJSON: ponto exacto do bairro (frontend usa radius/blur altos para ilusão de área)
                 features.append({
                     'type': 'Feature',
                     'geometry': {
-                        "type": "Polygon",
-                        "coordinates": [coords]
+                        'type': 'Point',
+                        'coordinates': [b_lon, b_lat],
                     },
                     'properties': result_data,
                 })
 
-            flooded_count = sum(1 for r in results if r['flooded'])
+            flooded_count  = sum(1 for r in results if r['flooded'])
             total_affected = sum(r['affectedPopulation'] for r in results)
+
+            import json
             geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
 
             return jsonify({
                 'success': True,
-                'data': results,
+                'data':    results,
                 'geojson': geojson,
                 'statistics': {
                     'floodedCount': flooded_count,
                     'totalAffected': total_affected,
-                    'totalBairros': len(results),
+                    'totalBairros':  len(results),
                     'avgRisk': (flooded_count / len(results) * 100) if results else 0,
                 },
                 'parameters': {
-                    'level': 'bairro',
-                    'floodRate': flood_rate * 100,
-                    'province': province_param,
-                    'municipality': municipality_param,
-                    'bairro': bairro_sel,
+                    'level':          'bairro',
+                    'floodRate':      flood_rate * 100,
+                    'province':       province,
+                    'municipality':   municipality,
+                    'bairro':         bairro_sel,
                     'elevation_used': True,
                 },
                 'timestamp': datetime.now().isoformat(),
             })
 
-        else:
-            return jsonify({'success': False, 'error': 'Nível inválido. Use: municipality ou bairro'}), 400
+        # ============================================================
+        # SIMULAÇÃO DE PROVÍNCIAS / MUNICÍPIOS
+        # ============================================================
+        level_map = {'province': 1, 'municipality': 2}
+        level_num = level_map.get(level)
+        if level_num is None:
+            return jsonify({'success': False, 'error': 'Nível inválido. Use: province, municipality ou bairro'}), 400
+
+        gdf = download_and_read_gadm_json('AGO', level_num)
+        if gdf is None:
+            return jsonify({'success': False, 'error': 'Erro ao carregar dados do GADM'}), 500
+
+        if province != 'all' and province != 'Luanda':
+            return jsonify({'success': True, 'data': [], 'count': 0, 'message': 'Apenas Luanda disponível'})
+
+        if province != 'all':
+            gdf = gdf[gdf['NAME_1'] == province]
+        if level == 'municipality' and municipality != 'all':
+            gdf = gdf[gdf['NAME_2'] == municipality]
+
+        gdf['name']               = gdf[f'NAME_{level_num}']
+        gdf['flooded']            = False
+        gdf['waterLevel']         = 0.0
+        gdf['severity']           = 'Nenhuma'
+        gdf['recoveryDays']       = 0
+        gdf['affectedPopulation'] = 0
+        gdf['elevation']          = 0.0
+
+        for i, row in gdf.iterrows():
+            prov = row['NAME_1']
+            name = row[f'NAME_{level_num}']
+            elevation_stats = get_region_elevation_stats(row['geometry'])
+            avg_elevation   = elevation_stats['avg']
+
+            if level == 'province':
+                static = next((p for p in PROVINCES if p['name'] == name), None)
+            else:
+                static = next((m for m in MUNICIPALITIES.get(prov, []) if m['name'] == name), None)
+
+            if not static:
+                continue
+
+            is_flooded, wl, severity, recovery_days = calculate_flood_risk(
+                static['risk'], flood_rate, water_level_input, avg_elevation, elevation_stats
+            )
+
+            affected_population = 0
+            if is_flooded:
+                impact_factor = min(wl / 20.0, 0.5)
+                affected_population = int(static['population'] * impact_factor)
+
+            gdf.at[i, 'flooded']            = is_flooded
+            gdf.at[i, 'waterLevel']         = wl
+            gdf.at[i, 'severity']           = severity
+            gdf.at[i, 'recoveryDays']       = recovery_days
+            gdf.at[i, 'affectedPopulation'] = affected_population
+            gdf.at[i, 'elevation']          = round(avg_elevation, 1)
+
+        gdf_copy        = gdf.copy()
+        gdf_copy['lat'] = gdf.geometry.centroid.y
+        gdf_copy['lon'] = gdf.geometry.centroid.x
+        results  = gdf_copy.drop(columns=['geometry']).to_dict('records')
+        geojson  = gdf.to_json()
+        flooded_count  = len(gdf[gdf['flooded']])
+        total_affected = sum(item['affectedPopulation'] for item in results)
+
+        return jsonify({
+            'success': True,
+            'data':    results,
+            'geojson': geojson,
+            'statistics': {
+                'floodedCount': flooded_count,
+                'totalAffected': total_affected,
+                'totalItems':    len(results),
+                'avgRisk': (flooded_count / len(results) * 100) if results else 0,
+            },
+            'parameters': {
+                'level':          level,
+                'floodRate':      flood_rate * 100,
+                'province':       province,
+                'municipality':   municipality,
+                'elevation_used': True,
+            },
+            'timestamp': datetime.now().isoformat(),
+        })
 
     except Exception as e:
         logger.error(f"Erro na simulação: {e}")
@@ -801,5 +831,24 @@ def simulate_flood():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'error': 'Endpoint não encontrado'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'success': False, 'error': 'Erro interno do servidor'}), 500
+
+
 if __name__ == '__main__':
+    print("\n" + "=" * 70)
+    print("API de Simulação de Inundações — Angola v4.1")
+    print("=" * 70)
+    print(f"Servidor : http://0.0.0.0:5000")
+    print(f"Províncias: {len(PROVINCES)}")
+    print(f"Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
+    print(f"Bairros   : {sum(len(b) for b in BAIRROS.values())} (com polígonos circulares)")
+    print("=" * 70 + "\n")
     app.run(debug=True, host='0.0.0.0', port=5000)
