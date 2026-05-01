@@ -53,7 +53,7 @@ BAIRROS = {
     # ── KILAMBA KIAXI ──────────────────────────────────────────────────────────
     # Município compacto a sul do centro, ~51 km²
     # Bairros confirmados: Golfe, Golfe II, Palanca, Vila Estoril, Sapú
-    'Kilamba Kiaxi': [
+    'Kilamba-Kiaxi': [
         {'id': 1,  'name': 'Golfe',         'population': 120000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8780, 'lon': 13.2490},
         {'id': 2,  'name': 'Golfe II',      'population': 100000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8850, 'lon': 13.2550},
         {'id': 3,  'name': 'Palanca',       'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8950, 'lon': 13.2620},
@@ -165,36 +165,36 @@ BAIRROS = {
         {'id': 105, 'name': 'EMCIB',            'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
     ],
 
-    # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
-    # Novo município (antes distrito de Cazenga); zona nordeste densa
-    'Hoji Ya Henda': [
-        {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
-        {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
-        {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
-    ],
+    # # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
+    # # Novo município (antes distrito de Cazenga); zona nordeste densa
+    # 'Hoji Ya Henda': [
+    #     {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
+    #     {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
+    #     {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
+    # ],
 
-    # ── KILAMBA ────────────────────────────────────────────────────────────────
-    # Novo município — Cidade do Kilamba (projecto habitacional)
-    'Kilamba': [
-        {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
-        {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
-        {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
-    ],
+    # # ── KILAMBA ────────────────────────────────────────────────────────────────
+    # # Novo município — Cidade do Kilamba (projecto habitacional)
+    # 'Kilamba': [
+    #     {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
+    #     {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
+    #     {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
+    # ],
 
-    # ── CAMAMA ─────────────────────────────────────────────────────────────────
-    # Novo município — zona de expansão urbana entre Kilamba Kiaxi e Viana
-    'Camama': [
-        {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
-        {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
-        {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
-    ],
+    # # ── CAMAMA ─────────────────────────────────────────────────────────────────
+    # # Novo município — zona de expansão urbana entre Kilamba Kiaxi e Viana
+    # 'Camama': [
+    #     {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
+    #     {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
+    #     {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
+    # ],
 
-    # ── MULENVOS ───────────────────────────────────────────────────────────────
-    # Novo município — Mulenvos de Baixo / Mulenvos de Cima, zona norte
-    'Mulenvos': [
-        {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
-        {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
-    ],
+    # # ── MULENVOS ───────────────────────────────────────────────────────────────
+    # # Novo município — Mulenvos de Baixo / Mulenvos de Cima, zona norte
+    # 'Mulenvos': [
+    #     {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
+    #     {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
+    # ],
 }
 
 # ==================== CACHES ====================
@@ -515,7 +515,7 @@ def get_municipalities():
         'Cacuaco':       'Cacuaco',
         'Cazenga':       'Cazenga',
         'Viana':         'Viana',
-        'Kilamba-Kiaxi': 'Kilamba Kiaxi',
+        'Kilamba-Kiaxi': 'Kilamba-Kiaxi',
         'Talatona':      'Talatona',
         'Maianga':       'Maianga',
         'Rangel':        'Rangel',
@@ -544,9 +544,8 @@ def get_municipalities():
     fallbacks = [
         {'id': 5,  'name': 'Kilamba Kiaxi', 'lat': -8.886,  'lon': 13.258,  'risk': 'Muito Alto', 'population': 1120000, 'area': 52},
         {'id': 12, 'name': 'Hoji Ya Henda', 'lat': -8.808,  'lon': 13.294,  'risk': 'Muito Alto', 'population': 700000,  'area': 30},
-        {'id': 13, 'name': 'Kilamba',        'lat': -8.934,  'lon': 13.292,  'risk': 'Médio',      'population': 250000,  'area': 55},
-        {'id': 14, 'name': 'Camama',         'lat': -8.945,  'lon': 13.268,  'risk': 'Alto',       'population': 320000,  'area': 45},
-        {'id': 15, 'name': 'Mulenvos',       'lat': -8.781,  'lon': 13.269,  'risk': 'Alto',       'population': 180000,  'area': 20},
+        {'id': 13, 'name': 'Camama',         'lat': -8.945,  'lon': 13.268,  'risk': 'Alto',       'population': 320000,  'area': 45},
+        {'id': 14, 'name': 'Mulenvos',       'lat': -8.781,  'lon': 13.269,  'risk': 'Alto',       'population': 180000,  'area': 20},
     ]
     for fb in fallbacks:
         if not any(m['name'] == fb['name'] for m in municipalities):
