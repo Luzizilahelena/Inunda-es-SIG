@@ -5,10 +5,12 @@ from flask_cors import CORS
 from datetime import datetime
 import logging
 import requests
+import math
 import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 import numpy as np
+from shapely.geometry import Point
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,153 +51,177 @@ MUNICIPALITIES = {
 # Cada bairro está no município correcto segundo a nova divisão administrativa
 # lat/lon correspondem ao centróide real do bairro no mapa
 
-BAIRROS = {
-    # ── KILAMBA KIAXI ──────────────────────────────────────────────────────────
-    # Município compacto a sul do centro, ~51 km²
-    # Bairros confirmados: Golfe, Golfe II, Palanca, Vila Estoril, Sapú
-    'Kilamba-Kiaxi': [
-        {'id': 1,  'name': 'Golfe',         'population': 120000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8780, 'lon': 13.2490},
-        {'id': 2,  'name': 'Golfe II',      'population': 100000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8850, 'lon': 13.2550},
-        {'id': 3,  'name': 'Palanca',       'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8950, 'lon': 13.2620},
-        {'id': 4,  'name': 'Vila Estoril',  'population': 90000,  'type': 'Residencial', 'risk': 'Médio',     'lat': -8.8900, 'lon': 13.2440},
-        {'id': 5,  'name': 'Sapú',          'population': 130000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8820, 'lon': 13.2700},
-    ],
+# BAIRROS = {
+#     # ── KILAMBA KIAXI ──────────────────────────────────────────────────────────
+#     # Município compacto a sul do centro, ~51 km²
+#     # Bairros confirmados: Golfe, Golfe II, Palanca, Vila Estoril, Sapú
+#     'Kilamba-Kiaxi': [
+#         {'id': 1,  'name': 'Golfe',         'population': 120000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8780, 'lon': 13.2490},
+#         {'id': 2,  'name': 'Golfe II',      'population': 100000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8850, 'lon': 13.2550},
+#         {'id': 3,  'name': 'Palanca',       'population': 150000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8950, 'lon': 13.2620},
+#         {'id': 4,  'name': 'Vila Estoril',  'population': 90000,  'type': 'Residencial', 'risk': 'Médio',     'lat': -8.8900, 'lon': 13.2440},
+#         {'id': 5,  'name': 'Sapú',          'population': 130000, 'type': 'Residencial', 'risk': 'Alto',      'lat': -8.8820, 'lon': 13.2700},
+#     ],
 
-    # ── CAZENGA ────────────────────────────────────────────────────────────────
-    # A norte do centro, zona muito densa
-    'Cazenga': [
-        {'id': 10, 'name': 'Cazenga Sede',   'population': 250000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8195, 'lon': 13.2880},
-        {'id': 11, 'name': 'Tala Hady',      'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8270, 'lon': 13.3030},
-        {'id': 12, 'name': 'Sapú (Cazenga)', 'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8340, 'lon': 13.2850},
-        {'id': 13, 'name': 'Kikolo',         'population': 160000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8120, 'lon': 13.3020},
-    ],
+#     # ── CAZENGA ────────────────────────────────────────────────────────────────
+#     # A norte do centro, zona muito densa
+#     'Cazenga': [
+#         {'id': 10, 'name': 'Cazenga Sede',   'population': 250000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8195, 'lon': 13.2880},
+#         {'id': 11, 'name': 'Tala Hady',      'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8270, 'lon': 13.3030},
+#         {'id': 12, 'name': 'Sapú (Cazenga)', 'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8340, 'lon': 13.2850},
+#         {'id': 13, 'name': 'Kikolo',         'population': 160000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8120, 'lon': 13.3020},
+#     ],
 
-    # ── CACUACO ────────────────────────────────────────────────────────────────
-    # A norte de Luanda, inclui Sequele, Funda, Quiage, Cabolombo
-    'Cacuaco': [
-        {'id': 20, 'name': 'Cacuaco Sede', 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7870, 'lon': 13.3670},
-        {'id': 21, 'name': 'Sequele',      'population': 140000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8030, 'lon': 13.3260},
-        {'id': 22, 'name': 'Funda',        'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7700, 'lon': 13.3720},
-        {'id': 23, 'name': 'Quiage',       'population': 95000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7560, 'lon': 13.3550},
-        {'id': 24, 'name': 'Cabolombo',    'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7780, 'lon': 13.3440},
-    ],
+#     # ── CACUACO ────────────────────────────────────────────────────────────────
+#     # A norte de Luanda, inclui Sequele, Funda, Quiage, Cabolombo
+#     'Cacuaco': [
+#         {'id': 20, 'name': 'Cacuaco Sede', 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7870, 'lon': 13.3670},
+#         {'id': 21, 'name': 'Sequele',      'population': 140000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8030, 'lon': 13.3260},
+#         {'id': 22, 'name': 'Funda',        'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7700, 'lon': 13.3720},
+#         {'id': 23, 'name': 'Quiage',       'population': 95000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7560, 'lon': 13.3550},
+#         {'id': 24, 'name': 'Cabolombo',    'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7780, 'lon': 13.3440},
+#     ],
 
-    # ── VIANA ──────────────────────────────────────────────────────────────────
-    # A leste, corredor industrial; Catete saiu para Icolo e Bengo na nova DPA
-    'Viana': [
-        {'id': 30, 'name': 'Viana Sede', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.9040, 'lon': 13.3740},
-        {'id': 31, 'name': 'Zango',      'population': 350000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.9520, 'lon': 13.4030},
-        {'id': 32, 'name': 'Kikuxi',     'population': 200000, 'type': 'Industrial',  'risk': 'Alto',       'lat': -8.9180, 'lon': 13.3390},
-        {'id': 33, 'name': 'Calumbo',    'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8670, 'lon': 13.4290},
-    ],
+#     # ── VIANA ──────────────────────────────────────────────────────────────────
+#     # A leste, corredor industrial; Catete saiu para Icolo e Bengo na nova DPA
+#     'Viana': [
+#         {'id': 30, 'name': 'Viana Sede', 'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.9040, 'lon': 13.3740},
+#         {'id': 31, 'name': 'Zango',      'population': 350000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.9520, 'lon': 13.4030},
+#         {'id': 32, 'name': 'Kikuxi',     'population': 200000, 'type': 'Industrial',  'risk': 'Alto',       'lat': -8.9180, 'lon': 13.3390},
+#         {'id': 33, 'name': 'Calumbo',    'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8670, 'lon': 13.4290},
+#     ],
 
-    # ── BELAS ──────────────────────────────────────────────────────────────────
-    # A sul do município de Talatona
-    'Belas': [
-        {'id': 40, 'name': 'Belas Sede',      'population': 180000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -9.0860, 'lon': 13.2010},
-        {'id': 41, 'name': 'Benfica (Belas)', 'population': 140000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.9700, 'lon': 13.1880},
-        {'id': 42, 'name': 'Ramiros',         'population': 95000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -9.0200, 'lon': 13.2200},
-        {'id': 43, 'name': 'Futungo de Belas','population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -9.0020, 'lon': 13.1700},
-    ],
+#     # ── BELAS ──────────────────────────────────────────────────────────────────
+#     # A sul do município de Talatona
+#     'Belas': [
+#         {'id': 40, 'name': 'Belas Sede',      'population': 180000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -9.0860, 'lon': 13.2010},
+#         {'id': 41, 'name': 'Benfica (Belas)', 'population': 140000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.9700, 'lon': 13.1880},
+#         {'id': 42, 'name': 'Ramiros',         'population': 95000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -9.0200, 'lon': 13.2200},
+#         {'id': 43, 'name': 'Futungo de Belas','population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -9.0020, 'lon': 13.1700},
+#     ],
 
-    # ── TALATONA ───────────────────────────────────────────────────────────────
-    # Zona nobre a sul, Nova Vida, Camama (zona sul)
-    'Talatona': [
-        {'id': 50, 'name': 'Talatona Sede',    'population': 120000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9600, 'lon': 13.1900},
-        {'id': 51, 'name': 'Nova Vida',        'population': 200000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9620, 'lon': 13.2220},
-        {'id': 52, 'name': 'Projecto Nova Vida','population': 150000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9480, 'lon': 13.2310},
-        {'id': 53, 'name': 'Morro Bento II',   'population': 100000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9390, 'lon': 13.2200},
-    ],
+#     # ── TALATONA ───────────────────────────────────────────────────────────────
+#     # Zona nobre a sul, Nova Vida, Camama (zona sul)
+#     'Talatona': [
+#         {'id': 50, 'name': 'Talatona Sede',    'population': 120000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9600, 'lon': 13.1900},
+#         {'id': 51, 'name': 'Nova Vida',        'population': 200000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9620, 'lon': 13.2220},
+#         {'id': 52, 'name': 'Projecto Nova Vida','population': 150000, 'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.9480, 'lon': 13.2310},
+#         {'id': 53, 'name': 'Morro Bento II',   'population': 100000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.9390, 'lon': 13.2200},
+#     ],
 
-    # ── MAIANGA ────────────────────────────────────────────────────────────────
-    # Centro-sul, zona urbana densa
-    'Maianga': [
-        {'id': 60, 'name': 'Alvalade',               'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8375, 'lon': 13.2295},
-        {'id': 61, 'name': 'Bairro Popular',         'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8440, 'lon': 13.2400},
-        {'id': 62, 'name': 'Prenda',                 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8570, 'lon': 13.2560},
-        {'id': 63, 'name': 'Rocha Pinto',            'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8490, 'lon': 13.2500},
-        {'id': 64, 'name': 'Cassequel',              'population': 100000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8460, 'lon': 13.2360},
-        {'id': 65, 'name': 'Mártires do Kifangondo', 'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8540, 'lon': 13.2480},
-        {'id': 66, 'name': 'Calemba',                'population': 70000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8560, 'lon': 13.2350},
-    ],
+#     # ── MAIANGA ────────────────────────────────────────────────────────────────
+#     # Centro-sul, zona urbana densa
+#     'Maianga': [
+#         {'id': 60, 'name': 'Alvalade',               'population': 120000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8375, 'lon': 13.2295},
+#         {'id': 61, 'name': 'Bairro Popular',         'population': 250000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8440, 'lon': 13.2400},
+#         {'id': 62, 'name': 'Prenda',                 'population': 200000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8570, 'lon': 13.2560},
+#         {'id': 63, 'name': 'Rocha Pinto',            'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8490, 'lon': 13.2500},
+#         {'id': 64, 'name': 'Cassequel',              'population': 100000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8460, 'lon': 13.2360},
+#         {'id': 65, 'name': 'Mártires do Kifangondo', 'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8540, 'lon': 13.2480},
+#         {'id': 66, 'name': 'Calemba',                'population': 70000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8560, 'lon': 13.2350},
+#     ],
 
-    # ── RANGEL ─────────────────────────────────────────────────────────────────
-    # Agora município autónomo na nova DPA (antes era distrito urbano)
-    'Rangel': [
-        {'id': 70, 'name': 'Terra Nova',         'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8215, 'lon': 13.2640},
-        {'id': 71, 'name': 'Precol',             'population': 80000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8170, 'lon': 13.2590},
-        {'id': 72, 'name': 'Combatentes',        'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8245, 'lon': 13.2600},
-        {'id': 73, 'name': 'Valódia',            'population': 90000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8290, 'lon': 13.2615},
-        {'id': 74, 'name': 'Mabor',              'population': 70000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8250, 'lon': 13.2690},
-        {'id': 75, 'name': 'Cuca',               'population': 60000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8200, 'lon': 13.2710},
-        {'id': 76, 'name': 'Comandante Valódia', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8310, 'lon': 13.2660},
-        {'id': 77, 'name': 'Lixeira (Rangel)',   'population': 95000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8165, 'lon': 13.2625},
-    ],
+#     # ── RANGEL ─────────────────────────────────────────────────────────────────
+#     # Agora município autónomo na nova DPA (antes era distrito urbano)
+#     'Rangel': [
+#         {'id': 70, 'name': 'Terra Nova',         'population': 100000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8215, 'lon': 13.2640},
+#         {'id': 71, 'name': 'Precol',             'population': 80000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8170, 'lon': 13.2590},
+#         {'id': 72, 'name': 'Combatentes',        'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8245, 'lon': 13.2600},
+#         {'id': 73, 'name': 'Valódia',            'population': 90000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8290, 'lon': 13.2615},
+#         {'id': 74, 'name': 'Mabor',              'population': 70000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8250, 'lon': 13.2690},
+#         {'id': 75, 'name': 'Cuca',               'population': 60000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8200, 'lon': 13.2710},
+#         {'id': 76, 'name': 'Comandante Valódia', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8310, 'lon': 13.2660},
+#         {'id': 77, 'name': 'Lixeira (Rangel)',   'population': 95000,  'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8165, 'lon': 13.2625},
+#     ],
 
-    # ── INGOMBOTA ──────────────────────────────────────────────────────────────
-    # Centro histórico / zona da baía
-    'Ingombota': [
-        {'id': 80, 'name': 'Cidade Alta',     'population': 90000,  'type': 'Comercial',   'risk': 'Baixo',  'lat': -8.8170, 'lon': 13.2240},
-        {'id': 81, 'name': 'Coqueiros',       'population': 120000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8145, 'lon': 13.2195},
-        {'id': 82, 'name': 'Cruzeiro',        'population': 85000,  'type': 'Comercial',   'risk': 'Médio',  'lat': -8.8155, 'lon': 13.2300},
-        {'id': 83, 'name': 'Patrice Lumumba', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8215, 'lon': 13.2345},
-        {'id': 84, 'name': 'Chicala',         'population': 80000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8030, 'lon': 13.2430},
-        {'id': 85, 'name': 'Boa Vista',       'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.8070, 'lon': 13.2220},
-    ],
+#     # ── INGOMBOTA ──────────────────────────────────────────────────────────────
+#     # Centro histórico / zona da baía
+#     'Ingombota': [
+#         {'id': 80, 'name': 'Cidade Alta',     'population': 90000,  'type': 'Comercial',   'risk': 'Baixo',  'lat': -8.8170, 'lon': 13.2240},
+#         {'id': 81, 'name': 'Coqueiros',       'population': 120000, 'type': 'Residencial', 'risk': 'Médio',  'lat': -8.8145, 'lon': 13.2195},
+#         {'id': 82, 'name': 'Cruzeiro',        'population': 85000,  'type': 'Comercial',   'risk': 'Médio',  'lat': -8.8155, 'lon': 13.2300},
+#         {'id': 83, 'name': 'Patrice Lumumba', 'population': 110000, 'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8215, 'lon': 13.2345},
+#         {'id': 84, 'name': 'Chicala',         'population': 80000,  'type': 'Residencial', 'risk': 'Alto',   'lat': -8.8030, 'lon': 13.2430},
+#         {'id': 85, 'name': 'Boa Vista',       'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',  'lat': -8.8070, 'lon': 13.2220},
+#     ],
 
-    # ── SAMBA ──────────────────────────────────────────────────────────────────
-    # A sul do centro, inclui zona do porto sul e Corimba
-    'Samba': [
-        {'id': 90, 'name': 'Rocha Pinto (Samba)', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8640, 'lon': 13.2530},
-        {'id': 91, 'name': 'Gamek',               'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8710, 'lon': 13.2470},
-        {'id': 92, 'name': 'Corimba',             'population': 120000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8590, 'lon': 13.2280},
-        {'id': 93, 'name': 'Mabunda',             'population': 90000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8680, 'lon': 13.2370},
-        {'id': 94, 'name': 'Morro Bento',         'population': 220000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8760, 'lon': 13.2420},
-        {'id': 95, 'name': 'Samba Pequena',       'population': 80000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8820, 'lon': 13.2340},
-    ],
+#     # ── SAMBA ──────────────────────────────────────────────────────────────────
+#     # A sul do centro, inclui zona do porto sul e Corimba
+#     'Samba': [
+#         {'id': 90, 'name': 'Rocha Pinto (Samba)', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8640, 'lon': 13.2530},
+#         {'id': 91, 'name': 'Gamek',               'population': 180000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8710, 'lon': 13.2470},
+#         {'id': 92, 'name': 'Corimba',             'population': 120000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8590, 'lon': 13.2280},
+#         {'id': 93, 'name': 'Mabunda',             'population': 90000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8680, 'lon': 13.2370},
+#         {'id': 94, 'name': 'Morro Bento',         'population': 220000, 'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8760, 'lon': 13.2420},
+#         {'id': 95, 'name': 'Samba Pequena',       'population': 80000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.8820, 'lon': 13.2340},
+#     ],
 
-    # ── SAMBIZANGA ─────────────────────────────────────────────────────────────
-    # A noroeste do centro histórico, zona popular densa
-    'Sambizanga': [
-        {'id': 100, 'name': 'Bairro Operário',  'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7980, 'lon': 13.2490},
-        {'id': 101, 'name': 'Ngola Kiluanje',   'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8015, 'lon': 13.2530},
-        {'id': 102, 'name': 'Petrangol',        'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8100, 'lon': 13.2590},
-        {'id': 103, 'name': 'Miramar',          'population': 80000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7940, 'lon': 13.2420},
-        {'id': 104, 'name': 'Boavista',         'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.7910, 'lon': 13.2380},
-        {'id': 105, 'name': 'EMCIB',            'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
-    ],
+#     # ── SAMBIZANGA ─────────────────────────────────────────────────────────────
+#     # A noroeste do centro histórico, zona popular densa
+#     'Sambizanga': [
+#         {'id': 100, 'name': 'Bairro Operário',  'population': 150000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7980, 'lon': 13.2490},
+#         {'id': 101, 'name': 'Ngola Kiluanje',   'population': 120000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8015, 'lon': 13.2530},
+#         {'id': 102, 'name': 'Petrangol',        'population': 110000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8100, 'lon': 13.2590},
+#         {'id': 103, 'name': 'Miramar',          'population': 80000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.7940, 'lon': 13.2420},
+#         {'id': 104, 'name': 'Boavista',         'population': 60000,  'type': 'Residencial', 'risk': 'Baixo',      'lat': -8.7910, 'lon': 13.2380},
+#         {'id': 105, 'name': 'EMCIB',            'population': 85000,  'type': 'Residencial', 'risk': 'Médio',      'lat': -8.8000, 'lon': 13.2460},
+#     ],
 
-    # # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
-    # # Novo município (antes distrito de Cazenga); zona nordeste densa
-    # 'Hoji Ya Henda': [
-    #     {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
-    #     {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
-    #     {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
-    # ],
+#     # ── HOJI YA HENDA ──────────────────────────────────────────────────────────
+#     # Novo município (antes distrito de Cazenga); zona nordeste densa
+#     'Hoji Ya Henda': [
+#         {'id': 110, 'name': 'Hoji Ya Henda Sede', 'population': 220000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.8080, 'lon': 13.2945},
+#         {'id': 111, 'name': 'Calemba II',         'population': 160000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.8010, 'lon': 13.3080},
+#         {'id': 112, 'name': 'Palanca (HYH)',      'population': 130000, 'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7940, 'lon': 13.3200},
+#     ],
 
-    # # ── KILAMBA ────────────────────────────────────────────────────────────────
-    # # Novo município — Cidade do Kilamba (projecto habitacional)
-    # 'Kilamba': [
-    #     {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
-    #     {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
-    #     {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
-    # ],
+#     # ── KILAMBA ────────────────────────────────────────────────────────────────
+#     # Novo município — Cidade do Kilamba (projecto habitacional)
+#     'Kilamba': [
+#         {'id': 120, 'name': 'Kilamba A',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9295, 'lon': 13.2905},
+#         {'id': 121, 'name': 'Kilamba B',   'population': 80000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9380, 'lon': 13.2850},
+#         {'id': 122, 'name': 'Kilamba C',   'population': 90000,  'type': 'Residencial', 'risk': 'Baixo', 'lat': -8.9350, 'lon': 13.3010},
+#     ],  
 
-    # # ── CAMAMA ─────────────────────────────────────────────────────────────────
-    # # Novo município — zona de expansão urbana entre Kilamba Kiaxi e Viana
-    # 'Camama': [
-    #     {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
-    #     {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
-    #     {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
-    # ],
+#     # ── CAMAMA ─────────────────────────────────────────────────────────────────
+#     # Novo município — zona de expansão urbana entre Kilamba Kiaxi e Viana
+#     'Camama': [
+#         {'id': 130, 'name': 'Camama Sede', 'population': 150000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9450, 'lon': 13.2680},
+#         {'id': 131, 'name': 'Benfica',     'population': 120000, 'type': 'Residencial', 'risk': 'Alto',  'lat': -8.9540, 'lon': 13.2530},
+#         {'id': 132, 'name': 'Cassoneca',   'population': 90000,  'type': 'Residencial', 'risk': 'Médio', 'lat': -8.9350, 'lon': 13.2800},
+#     ],
 
-    # # ── MULENVOS ───────────────────────────────────────────────────────────────
-    # # Novo município — Mulenvos de Baixo / Mulenvos de Cima, zona norte
-    # 'Mulenvos': [
-    #     {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
-    #     {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
-    # ],
-}
+#     # ── MULENVOS ───────────────────────────────────────────────────────────────
+#     # Novo município — Mulenvos de Baixo / Mulenvos de Cima, zona norte
+#     'Mulenvos': [
+#         {'id': 140, 'name': 'Mulenvos de Baixo', 'population': 100000, 'type': 'Residencial', 'risk': 'Muito Alto', 'lat': -8.7850, 'lon': 13.2650},
+#         {'id': 141, 'name': 'Mulenvos de Cima',  'population': 80000,  'type': 'Residencial', 'risk': 'Alto',       'lat': -8.7770, 'lon': 13.2720},
+#     ],
+# }
+
+BAIRROS_GEO = gpd.read_file("bairros.geojson")
+
+def encontrar_bairro(lat, lon):
+    ponto = Point(lon, lat)
+
+    for _, row in BAIRROS_GEO.iterrows():
+        BAIRROS_GEO.sindex
+        possible_matches_index = list(BAIRROS_GEO.sindex.intersection(ponto.bounds))
+    return None
+
+def obter_centro(nome):
+    bairro = BAIRROS_GEO[BAIRROS_GEO["name"] == nome]
+
+    if bairro.empty:
+        return None
+
+    centroid = bairro.geometry.centroid.iloc[0]
+
+    return {
+        "lat": centroid.y,
+        "lon": centroid.x
+    }
+
 
 # ==================== CACHES ====================
 GADM_CACHE = {}
@@ -351,7 +377,7 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
     risk_modifier = risk_factors.get(risk_level, 0)
     drainage = drainage_factor.get(risk_level, 0.5)
 
-    avg_elevation = elevation_stats['avg'] if elevation_stats else area_elevation
+    avg_elevation = elevation_stats.get('avg', area_elevation) if elevation_stats else area_elevation
     elevation_range = elevation_stats.get('range', 0) if elevation_stats else 0
     min_elevation = elevation_stats['min'] if elevation_stats else area_elevation
 
@@ -375,8 +401,14 @@ def calculate_flood_risk(risk_level, flood_rate, water_level_input, area_elevati
     else:
         terrain_risk = 0.0
 
-    adjusted_probability = flood_rate + risk_modifier + elevation_risk + terrain_risk
-    adjusted_probability = max(0, min(1, adjusted_probability))
+    score = (
+        flood_rate * 2.0 +
+        risk_modifier * 1.5 +
+        elevation_risk * 1.2 +
+        terrain_risk * 1.0
+    )
+
+    adjusted_probability = 1 / (1 + math.exp(-score))
 
     if water_level_input and water_level_input > 0:
         base_water = water_level_input
@@ -463,7 +495,7 @@ def api_info():
         'data_available': {
             'provinces':     len(PROVINCES),
             'municipalities': sum(len(m) for m in MUNICIPALITIES.values()),
-            'bairros':       sum(len(b) for b in BAIRROS.values()),
+            'bairros':       len(BAIRROS_GEO),
         },
         'elevation_service': 'Open-Elevation API (SRTM 90m)',
     })
@@ -533,7 +565,7 @@ def get_municipalities():
         if static_name:
             static_mun = next((m for m in static_muns if m['name'] == static_name), None)
             if static_mun:
-                centroid = row['geometry'].centroid
+                centroid = row.geometry.centroid
                 municipalities.append({
                     'id': static_mun['id'], 'name': static_name, 'province': 'Luanda',
                     'risk': static_mun['risk'], 'population': static_mun['population'],
@@ -565,20 +597,20 @@ def get_bairros():
 
     if not municipality or municipality == 'all':
         all_bairros = []
-        for munic_name, bairros_list in BAIRROS.items():
+        for munic_name, bairros_list in BAIRROS_GEO.groupby("municipality"):
             for b in bairros_list:
                 all_bairros.append({**b, 'municipality': munic_name})
         return jsonify({'success': True, 'data': all_bairros, 'count': len(all_bairros), 'timestamp': datetime.now().isoformat()})
 
     normalized_municipality = normalize_name(municipality)
-    matching_key = next((k for k in BAIRROS if normalize_name(k) == normalized_municipality), None)
+    matching_key = next((k for k in BAIRROS_GEO if normalize_name(k) == normalized_municipality), None)
 
     if not matching_key:
         return jsonify({'success': True, 'data': [], 'count': 0,
                         'message': f'Nenhum bairro cadastrado para {municipality}',
                         'timestamp': datetime.now().isoformat()})
 
-    bairros_list = list(BAIRROS[matching_key])
+    bairros_list = list(BAIRROS_GEO[matching_key])
 
     bairro_filter = request.args.get('bairro', 'all')
     if bairro_filter and bairro_filter != 'all':
@@ -640,13 +672,13 @@ def simulate_flood():
                                 'error': 'Seleccione um município específico para simular bairros'}), 400
 
             normalized_municipality = normalize_name(municipality)
-            matching_key = next((k for k in BAIRROS if normalize_name(k) == normalized_municipality), None)
+            matching_key = next((k for k in BAIRROS_GEO if normalize_name(k) == normalized_municipality), None)
 
             if not matching_key:
                 return jsonify({'success': False,
                                 'error': f'Nenhum bairro cadastrado para o município {municipality}'}), 404
 
-            bairros_list = list(BAIRROS[matching_key])
+            bairros_list = list(BAIRROS_GEO[matching_key])
 
             if bairro_sel and bairro_sel != 'all':
                 bairros_list = [b for b in bairros_list if b['name'] == bairro_sel]
@@ -665,9 +697,19 @@ def simulate_flood():
                 risk        = bairro_data['risk']
                 pop         = bairro_data['population']
 
-                b_lat = bairro_data['lat']
-                b_lon = bairro_data['lon']
-                elevation_stats = get_point_elevation(b_lat, b_lon)
+                subset = BAIRROS_GEO[BAIRROS_GEO["name"] == bairro_name]
+
+                if subset.empty:
+                    continue  # ou log warning
+
+                geom = subset.geometry.iloc[0]
+                
+                representative_point()
+                centroid = geom.centroid
+
+                b_lat = centroid.y
+                b_lon = centroid.x
+                elevation_stats = get_region_elevation_stats(geom)
                 avg_elevation   = elevation_stats['avg']
 
                 logger.info(f"Bairro {bairro_name}: lat={b_lat} lon={b_lon} elev={avg_elevation:.1f}m")
@@ -715,7 +757,10 @@ def simulate_flood():
             total_affected = sum(r['affectedPopulation'] for r in results)
 
             import json
-            geojson = json.dumps({'type': 'FeatureCollection', 'features': features})
+            geojson = {
+                'type': 'FeatureCollection',
+                'features': features
+            }
 
             return jsonify({
                 'success': True,
@@ -848,6 +893,6 @@ if __name__ == '__main__':
     print(f"Servidor : http://0.0.0.0:5000")
     print(f"Províncias: {len(PROVINCES)}")
     print(f"Municípios: {sum(len(m) for m in MUNICIPALITIES.values())}")
-    print(f"Bairros   : {sum(len(b) for b in BAIRROS.values())} (com polígonos circulares)")
+    print(f"Bairros   : {BAIRROS_GEO['name'].nunique() if 'name' in BAIRROS_GEO.columns else len(BAIRROS_GEO)}")
     print("=" * 70 + "\n")
     app.run(debug=True, host='0.0.0.0', port=5000)
