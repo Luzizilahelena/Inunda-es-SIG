@@ -28,7 +28,7 @@ GADM_TO_SYSTEM = {
     'Cacuaco':       'Cacuaco',
     'Cazenga':       'Cazenga',
     'Viana':         'Viana',
-    'Kilamba-Kiaxi': 'Kilamba Kiaxi',
+    'Kilamba Kiaxi': 'Kilamba Kiaxi',
     'Talatona':      'Talatona',
     'Maianga':       'Maianga',
     'Rangel':        'Rangel',
