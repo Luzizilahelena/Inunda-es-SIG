@@ -1,11 +1,9 @@
 """
 fetch_bairros.py
 ================
-Dados dos bairros de Luanda embutidos directamente no script
-(fonte: OpenStreetMap via Overpass, exportado em 2026-06-03).
-
+Dados dos bairros de Luanda embutidos directamente no script.
 Faz spatial join com polígonos GADM 4.1 para atribuir o município
-correcto a cada bairro e gera bairros_com_municipio.geojson.
+correcto e gera bairros_com_municipio.geojson.
 
 Uso:
     python fetch_bairros.py
@@ -20,42 +18,45 @@ import geopandas as gpd
 from zipfile import ZipFile
 from io import BytesIO
 from shapely.geometry import Point
+from shapely.ops import unary_union
 
-# ── Mapeamento GADM NAME_2 → nome usado no sistema ───────────────────────────
+# ── Mapeamento GADM NAME_2 → nome do sistema ─────────────────────────────────
+# Nomes exactos confirmados via debug do GADM 4.1
 
 GADM_TO_SYSTEM = {
-    # Nomes exactos confirmados do GADM 4.1 para Luanda
     'Cacuaco':      'Cacuaco',
     'Cazenga':      'Cazenga',
     'Ingombota':    'Ingombota',
-    'KilambaKiaxi': 'Kilamba Kiaxi',   # GADM sem espaço nem hífen
+    'KilambaKiaxi': 'Kilamba Kiaxi',
     'Maianga':      'Maianga',
     'Rangel':       'Rangel',
     'Samba':        'Samba',
     'Sambizanga':   'Sambizanga',
     'Viana':        'Viana',
-    # Belas e Talatona não existem no GADM 4.1 — tratados em NEW_MUNICIPALITIES
+    # Belas e Talatona não existem no GADM 4.1 — em NEW_MUNICIPALITIES
 }
 
-# ── Municípios sem polígono no GADM 4.1 (círculos aproximados) ───────────────
+# ── Municípios sem polígono no GADM 4.1 ──────────────────────────────────────
+# Círculos aproximados. Os novos municípios são recortados dos polígonos GADM,
+# por isso têm prioridade no spatial join.
 
 NEW_MUNICIPALITIES = [
-    # Belas — zona sul/litoral, inclui Futungo, Benfica, Quifica, Talatona (node)
+    # Belas — litoral sul, Futungo, Benfica, Quifica
     {'name': 'Belas',         'lat': -8.960,  'lon': 13.168,  'radius': 0.09},
-    # Talatona — zona nobre a sul, Nova Vida, Morro Bento, Cambamba
+    # Talatona — sul, Nova Vida, Morro Bento, Cambamba
     {'name': 'Talatona',      'lat': -8.912,  'lon': 13.205,  'radius': 0.055},
     # Hoji Ya Henda — nordeste, Tala-Hady, Cariango, Mabor, Kikolo
     {'name': 'Hoji Ya Henda', 'lat': -8.7988, 'lon': 13.3136, 'radius': 0.07},
     # Camama — sul de Kilamba Kiaxi
     {'name': 'Camama',        'lat': -8.932,  'lon': 13.262,  'radius': 0.05},
-    # Kilamba — Cidade do Kilamba, Quarteirões, lat ~-8.99
+    # Kilamba — Cidade do Kilamba, Quarteirões lat ~-8.99/-9.01
     {'name': 'Kilamba',       'lat': -8.9988, 'lon': 13.2644, 'radius': 0.05},
-    # Mulenvos — norte de Luanda
+    # Mulenvos — norte
     {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
 ]
 
 # ── Override manual ───────────────────────────────────────────────────────────
-# Bairros que ficam na fronteira dos polígonos ou são mal atribuídos pelo join.
+# Bairros na fronteira de polígonos ou mal atribuídos pelo join.
 
 MANUAL_MUNICIPALITY = {
     "Golf":                      "Kilamba Kiaxi",
@@ -295,36 +296,40 @@ def build_municipality_gdf():
         with zf.open(zf.namelist()[0]) as f:
             gadm = gpd.read_file(f, driver='GeoJSON')
 
-    # Construir círculos dos novos municípios
-    new_rows = []
+    # ── LINHA QUE FALTAVA: filtrar só Luanda ─────────────────────────────────
+    luanda = gadm[gadm['NAME_1'] == 'Luanda'].copy()
+    print(f"  GADM — municípios de Luanda encontrados: {luanda['NAME_2'].tolist()}")
+
+    # Círculos dos novos municípios
     new_geoms = []
+    new_rows  = []
     for nm in NEW_MUNICIPALITIES:
         circle = Point(nm['lon'], nm['lat']).buffer(nm['radius'])
         new_rows.append({'municipality': nm['name'], 'geometry': circle})
         new_geoms.append(circle)
 
-    # União de todos os círculos novos para recortar dos polígonos GADM
-    from shapely.ops import unary_union
+    # União dos círculos para recortar os polígonos GADM
     new_union = unary_union(new_geoms)
 
-    # Polígonos GADM recortados (sem as áreas já cobertas pelos novos municípios)
+    # Polígonos GADM recortados — remove áreas já cobertas pelos novos municípios
     gadm_rows = []
     for _, row in luanda.iterrows():
         sys_name = GADM_TO_SYSTEM.get(row['NAME_2'])
         if not sys_name:
+            print(f"  AVISO: NAME_2={row['NAME_2']!r} sem mapeamento — ignorado")
             continue
         clipped = row.geometry.difference(new_union)
         if not clipped.is_empty:
             gadm_rows.append({'municipality': sys_name, 'geometry': clipped})
 
+    # Novos municípios primeiro (prioridade no sjoin), GADM a seguir
     rows = new_rows + gadm_rows
-
     mun_gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
-    print(f"Municípios: {sorted(mun_gdf['municipality'].tolist())}")
+    print(f"Municípios prontos: {sorted(mun_gdf['municipality'].tolist())}")
     return mun_gdf
 
 
-# ── Passo 3: spatial join + enriquecimento ───────────────────────────────────
+# ── Passo 3: spatial join ────────────────────────────────────────────────────
 
 def enrich(bairros_gdf, mun_gdf):
     print("A fazer spatial join...")
@@ -335,6 +340,7 @@ def enrich(bairros_gdf, mun_gdf):
         how='left',
         predicate='within'
     )
+    # Manter apenas o primeiro match por bairro (novos municípios têm índice menor)
     joined = joined[~joined.index.duplicated(keep='first')]
 
     missing = joined['municipality'].isna()
@@ -350,7 +356,7 @@ def enrich(bairros_gdf, mun_gdf):
             dist = mun_pts.geometry.distance(pt)
             joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
 
-    # Overrides manuais — corrigir bairros na fronteira ou mal atribuídos
+    # Overrides manuais
     for idx, row in joined.iterrows():
         override = MANUAL_MUNICIPALITY.get(row.get('name'))
         if override:
@@ -370,9 +376,9 @@ def save(gdf, path):
     print(f"Total: {len(gdf)} bairros\n")
     print("Distribuição por município:")
     for mun, count in gdf['municipality'].value_counts().sort_index().items():
-        print(f"  {mun:<20} {count} bairros")
+        print(f"  {mun:<22} {count} bairros")
     n = gdf['municipality'].isna().sum()
-    print(f"\n{'✓ Todos os bairros têm município.' if not n else f'⚠ {n} bairros sem município.'}")
+    print(f"\n{'✓ Todos os bairros têm município.' if not n else f'⚠ {n} sem município.'}")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

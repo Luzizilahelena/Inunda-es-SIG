@@ -403,7 +403,7 @@ def get_municipalities():
         'Cacuaco':       'Cacuaco',
         'Cazenga':       'Cazenga',
         'Viana':         'Viana',
-        'Kilamba-Kiaxi': 'Kilamba Kiaxi',
+        'KilambaKiaxi': 'Kilamba Kiaxi',
         'Talatona':      'Talatona',
         'Maianga':       'Maianga',
         'Rangel':        'Rangel',
