@@ -24,47 +24,53 @@ from shapely.geometry import Point
 # ── Mapeamento GADM NAME_2 → nome usado no sistema ───────────────────────────
 
 GADM_TO_SYSTEM = {
-    'Belas':         'Belas',
-    'Cacuaco':       'Cacuaco',
-    'Cazenga':       'Cazenga',
-    'Viana':         'Viana',
-    'Kilamba-Kiaxi': 'Kilamba Kiaxi',
-    'Talatona':      'Talatona',
-    'Maianga':       'Maianga',
-    'Rangel':        'Rangel',
-    'Ingombota':     'Ingombota',
-    'Samba':         'Samba',
-    'Sambizanga':    'Sambizanga',
+    # Nomes exactos confirmados do GADM 4.1 para Luanda
+    'Cacuaco':      'Cacuaco',
+    'Cazenga':      'Cazenga',
+    'Ingombota':    'Ingombota',
+    'KilambaKiaxi': 'Kilamba Kiaxi',   # GADM sem espaço nem hífen
+    'Maianga':      'Maianga',
+    'Rangel':       'Rangel',
+    'Samba':        'Samba',
+    'Sambizanga':   'Sambizanga',
+    'Viana':        'Viana',
+    # Belas e Talatona não existem no GADM 4.1 — tratados em NEW_MUNICIPALITIES
 }
 
-# Municípios novos sem polígono no GADM 4.1 (círculos aproximados)
-# Centros e raios calculados a partir das coordenadas reais dos bairros conhecidos
+# ── Municípios sem polígono no GADM 4.1 (círculos aproximados) ───────────────
+
 NEW_MUNICIPALITIES = [
-    # Hoji Ya Henda — Tala-Hady, Cariango, Cazenga Popular, Patricio, Mabor, Kikolo
-    # zona nordeste de Luanda, lon ~13.29–13.33
+    # Belas — zona sul/litoral, inclui Futungo, Benfica, Quifica, Talatona (node)
+    {'name': 'Belas',         'lat': -8.960,  'lon': 13.168,  'radius': 0.09},
+    # Talatona — zona nobre a sul, Nova Vida, Morro Bento, Cambamba
+    {'name': 'Talatona',      'lat': -8.912,  'lon': 13.205,  'radius': 0.055},
+    # Hoji Ya Henda — nordeste, Tala-Hady, Cariango, Mabor, Kikolo
     {'name': 'Hoji Ya Henda', 'lat': -8.7988, 'lon': 13.3136, 'radius': 0.07},
-    # Camama — a sul/sudeste de Kilamba Kiaxi
+    # Camama — sul de Kilamba Kiaxi
     {'name': 'Camama',        'lat': -8.932,  'lon': 13.262,  'radius': 0.05},
-    # Kilamba — Cidade do Kilamba, Quarteirões, lat ~-8.99 a -9.01
+    # Kilamba — Cidade do Kilamba, Quarteirões, lat ~-8.99
     {'name': 'Kilamba',       'lat': -8.9988, 'lon': 13.2644, 'radius': 0.05},
-    # Mulenvos — zona norte, Mulenvos de Baixo/Cima
+    # Mulenvos — norte de Luanda
     {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
 ]
 
 # ── Override manual ───────────────────────────────────────────────────────────
-# Bairros que o spatial join não atribui correctamente por estarem na
-# fronteira dos polígonos GADM ou fora dos círculos dos novos municípios.
-# Chave: nome exacto do bairro (case-sensitive). Valor: município correcto.
+# Bairros que ficam na fronteira dos polígonos ou são mal atribuídos pelo join.
+
 MANUAL_MUNICIPALITY = {
-    "Golf":                  "Kilamba Kiaxi",
-    "Golf II":               "Kilamba Kiaxi",
-    "Palanca":               "Kilamba Kiaxi",
+    "Golf":                      "Kilamba Kiaxi",
+    "Golf II":                   "Kilamba Kiaxi",
+    "Palanca":                   "Kilamba Kiaxi",
     "Distrito do Kilamba Kiaxe": "Kilamba Kiaxi",
-    "Sector 11A":            "Kilamba Kiaxi",
+    "Sector 11A":                "Kilamba Kiaxi",
     "Bairro São Pedro da Barra": "Sambizanga",
-    "Bairro da Mabor":       "Cacuaco",
-    "Kifangondo":            "Cacuaco",
+    "Bairro da Mabor":           "Cacuaco",
+    "Kifangondo":                "Cacuaco",
 }
+
+# ── Risco base por município ──────────────────────────────────────────────────
+
+MUNICIPALITY_RISK = {
     'Belas':          'Alto',
     'Cacuaco':        'Muito Alto',
     'Cazenga':        'Muito Alto',
@@ -85,8 +91,7 @@ MANUAL_MUNICIPALITY = {
 POPULATION_DEFAULT = 50000
 OUTPUT_PATH = "bairros_com_municipio.geojson"
 
-# ── Dados dos bairros (OpenStreetMap, Luanda, 2026-06-03) ─────────────────────
-# Fonte: Overpass API — nodes/ways com place=suburb ou place=neighbourhood
+# ── Dados dos bairros ─────────────────────────────────────────────────────────
 
 BAIRROS_RAW = [
     {"name": "Urbanização Nova Vida",                    "lon": 13.2299477,  "lat": -8.9072958},
@@ -255,7 +260,6 @@ def normalize(name):
 
 
 def dedup(bairros):
-    """Remove duplicados por (nome normalizado, coords arredondadas)."""
     seen = set()
     result = []
     for b in bairros:
@@ -266,16 +270,13 @@ def dedup(bairros):
     return result
 
 
-# ── Passo 1: Construir GeoDataFrame de bairros ───────────────────────────────
+# ── Passo 1: bairros ─────────────────────────────────────────────────────────
 
 def build_bairros_gdf():
     bairros = dedup(BAIRROS_RAW)
     features = [
-        {
-            "type": "Feature",
-            "properties": {"name": b["name"]},
-            "geometry": {"type": "Point", "coordinates": [b["lon"], b["lat"]]}
-        }
+        {"type": "Feature", "properties": {"name": b["name"]},
+         "geometry": {"type": "Point", "coordinates": [b["lon"], b["lat"]]}}
         for b in bairros
     ]
     gdf = gpd.GeoDataFrame.from_features(features, crs='EPSG:4326')
@@ -283,35 +284,47 @@ def build_bairros_gdf():
     return gdf
 
 
-# ── Passo 2: Construir GeoDataFrame de municípios (GADM) ─────────────────────
+# ── Passo 2: municípios ──────────────────────────────────────────────────────
 
 def build_municipality_gdf():
     url = "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_AGO_2.json.zip"
-    print("A descarregar polígonos GADM (municípios de Luanda)...")
+    print("A descarregar polígonos GADM...")
     resp = requests.get(url, timeout=90)
     resp.raise_for_status()
-
     with ZipFile(BytesIO(resp.content)) as zf:
         with zf.open(zf.namelist()[0]) as f:
             gadm = gpd.read_file(f, driver='GeoJSON')
 
-    luanda = gadm[gadm['NAME_1'] == 'Luanda']
-    rows = []
-    for _, row in luanda.iterrows():
-        sys_name = GADM_TO_SYSTEM.get(row['NAME_2'])
-        if sys_name:
-            rows.append({'municipality': sys_name, 'geometry': row.geometry})
-
+    # Construir círculos dos novos municípios
+    new_rows = []
+    new_geoms = []
     for nm in NEW_MUNICIPALITIES:
         circle = Point(nm['lon'], nm['lat']).buffer(nm['radius'])
-        rows.append({'municipality': nm['name'], 'geometry': circle})
+        new_rows.append({'municipality': nm['name'], 'geometry': circle})
+        new_geoms.append(circle)
+
+    # União de todos os círculos novos para recortar dos polígonos GADM
+    from shapely.ops import unary_union
+    new_union = unary_union(new_geoms)
+
+    # Polígonos GADM recortados (sem as áreas já cobertas pelos novos municípios)
+    gadm_rows = []
+    for _, row in luanda.iterrows():
+        sys_name = GADM_TO_SYSTEM.get(row['NAME_2'])
+        if not sys_name:
+            continue
+        clipped = row.geometry.difference(new_union)
+        if not clipped.is_empty:
+            gadm_rows.append({'municipality': sys_name, 'geometry': clipped})
+
+    rows = new_rows + gadm_rows
 
     mun_gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
     print(f"Municípios: {sorted(mun_gdf['municipality'].tolist())}")
     return mun_gdf
 
 
-# ── Passo 3: Spatial join ────────────────────────────────────────────────────
+# ── Passo 3: spatial join + enriquecimento ───────────────────────────────────
 
 def enrich(bairros_gdf, mun_gdf):
     print("A fazer spatial join...")
@@ -328,7 +341,6 @@ def enrich(bairros_gdf, mun_gdf):
     n_missing = missing.sum()
     if n_missing:
         print(f"  {n_missing} bairros fora dos polígonos — fallback por proximidade...")
-        # Usar CRS projectado (UTM zona 33S) para distâncias correctas sem avisos
         mun_proj     = mun_gdf.to_crs('EPSG:32733')
         bairros_proj = bairros_gdf.to_crs('EPSG:32733')
         mun_pts = mun_proj.copy()
@@ -338,7 +350,7 @@ def enrich(bairros_gdf, mun_gdf):
             dist = mun_pts.geometry.distance(pt)
             joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
 
-    # Aplicar overrides manuais (bairros na fronteira ou mal atribuídos)
+    # Overrides manuais — corrigir bairros na fronteira ou mal atribuídos
     for idx, row in joined.iterrows():
         override = MANUAL_MUNICIPALITY.get(row.get('name'))
         if override:
@@ -350,7 +362,7 @@ def enrich(bairros_gdf, mun_gdf):
     return joined[['name', 'municipality', 'risk', 'population', 'geometry']]
 
 
-# ── Passo 4: Guardar ─────────────────────────────────────────────────────────
+# ── Passo 4: guardar ─────────────────────────────────────────────────────────
 
 def save(gdf, path):
     gdf.to_file(path, driver='GeoJSON')
