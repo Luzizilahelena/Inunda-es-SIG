@@ -51,7 +51,20 @@ NEW_MUNICIPALITIES = [
     {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
 ]
 
-MUNICIPALITY_RISK = {
+# ── Override manual ───────────────────────────────────────────────────────────
+# Bairros que o spatial join não atribui correctamente por estarem na
+# fronteira dos polígonos GADM ou fora dos círculos dos novos municípios.
+# Chave: nome exacto do bairro (case-sensitive). Valor: município correcto.
+MANUAL_MUNICIPALITY = {
+    "Golf":                  "Kilamba Kiaxi",
+    "Golf II":               "Kilamba Kiaxi",
+    "Palanca":               "Kilamba Kiaxi",
+    "Distrito do Kilamba Kiaxe": "Kilamba Kiaxi",
+    "Sector 11A":            "Kilamba Kiaxi",
+    "Bairro São Pedro da Barra": "Sambizanga",
+    "Bairro da Mabor":       "Cacuaco",
+    "Kifangondo":            "Cacuaco",
+}
     'Belas':          'Alto',
     'Cacuaco':        'Muito Alto',
     'Cazenga':        'Muito Alto',
@@ -324,6 +337,12 @@ def enrich(bairros_gdf, mun_gdf):
             pt   = bairros_proj.loc[idx, 'geometry']
             dist = mun_pts.geometry.distance(pt)
             joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
+
+    # Aplicar overrides manuais (bairros na fronteira ou mal atribuídos)
+    for idx, row in joined.iterrows():
+        override = MANUAL_MUNICIPALITY.get(row.get('name'))
+        if override:
+            joined.at[idx, 'municipality'] = override
 
     joined['risk']       = joined['municipality'].map(MUNICIPALITY_RISK).fillna('Médio')
     joined['population'] = POPULATION_DEFAULT
