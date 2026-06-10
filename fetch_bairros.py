@@ -28,7 +28,7 @@ GADM_TO_SYSTEM = {
     'Cacuaco':       'Cacuaco',
     'Cazenga':       'Cazenga',
     'Viana':         'Viana',
-    'Kilamba Kiaxi': 'Kilamba Kiaxi',
+    'Kilamba-Kiaxi': 'Kilamba Kiaxi',
     'Talatona':      'Talatona',
     'Maianga':       'Maianga',
     'Rangel':        'Rangel',
@@ -38,11 +38,17 @@ GADM_TO_SYSTEM = {
 }
 
 # Municípios novos sem polígono no GADM 4.1 (círculos aproximados)
+# Centros e raios calculados a partir das coordenadas reais dos bairros conhecidos
 NEW_MUNICIPALITIES = [
-    {'name': 'Hoji Ya Henda', 'lat': -8.808, 'lon': 13.294, 'radius': 0.04},
-    {'name': 'Camama',        'lat': -8.945, 'lon': 13.268, 'radius': 0.04},
-    {'name': 'Kilamba',       'lat': -8.935, 'lon': 13.295, 'radius': 0.04},
-    {'name': 'Mulenvos',      'lat': -8.781, 'lon': 13.269, 'radius': 0.03},
+    # Hoji Ya Henda — Tala-Hady, Cariango, Cazenga Popular, Patricio, Mabor, Kikolo
+    # zona nordeste de Luanda, lon ~13.29–13.33
+    {'name': 'Hoji Ya Henda', 'lat': -8.7988, 'lon': 13.3136, 'radius': 0.07},
+    # Camama — a sul/sudeste de Kilamba Kiaxi
+    {'name': 'Camama',        'lat': -8.932,  'lon': 13.262,  'radius': 0.05},
+    # Kilamba — Cidade do Kilamba, Quarteirões, lat ~-8.99 a -9.01
+    {'name': 'Kilamba',       'lat': -8.9988, 'lon': 13.2644, 'radius': 0.05},
+    # Mulenvos — zona norte, Mulenvos de Baixo/Cima
+    {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
 ]
 
 MUNICIPALITY_RISK = {
@@ -309,10 +315,13 @@ def enrich(bairros_gdf, mun_gdf):
     n_missing = missing.sum()
     if n_missing:
         print(f"  {n_missing} bairros fora dos polígonos — fallback por proximidade...")
-        mun_pts = mun_gdf.copy()
+        # Usar CRS projectado (UTM zona 33S) para distâncias correctas sem avisos
+        mun_proj     = mun_gdf.to_crs('EPSG:32733')
+        bairros_proj = bairros_gdf.to_crs('EPSG:32733')
+        mun_pts = mun_proj.copy()
         mun_pts['geometry'] = mun_pts.geometry.centroid
         for idx in joined[missing].index:
-            pt   = bairros_gdf.loc[idx, 'geometry']
+            pt   = bairros_proj.loc[idx, 'geometry']
             dist = mun_pts.geometry.distance(pt)
             joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
 
