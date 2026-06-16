@@ -1,9 +1,13 @@
 """
 fetch_bairros.py
 ================
-Dados dos bairros de Luanda embutidos directamente no script.
-Faz spatial join com polígonos GADM 4.1 para atribuir o município
-correcto e gera bairros_com_municipio.geojson.
+Bairros de Luanda com município atribuído com base na divisão
+administrativa real (pós-2024), usando um mapeamento manual por nome
+(BAIRRO_TO_MUNICIPALITY). Para bairros cujo nome não constar nesse
+mapeamento, recorre-se a spatial join com GADM 4.1 + círculos
+aproximados para os municípios novos, como fallback.
+
+Gera bairros_com_municipio.geojson.
 
 Uso:
     python fetch_bairros.py
@@ -20,56 +24,10 @@ from io import BytesIO
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
-# ── Mapeamento GADM NAME_2 → nome do sistema ─────────────────────────────────
-# Nomes exactos confirmados via debug do GADM 4.1
+OUTPUT_PATH = "bairros_com_municipio.geojson"
+POPULATION_DEFAULT = 50000
 
-GADM_TO_SYSTEM = {
-    'Cacuaco':      'Cacuaco',
-    'Cazenga':      'Cazenga',
-    'Ingombota':    'Ingombota',
-    'KilambaKiaxi': 'Kilamba Kiaxi',
-    'Maianga':      'Maianga',
-    'Rangel':       'Rangel',
-    'Samba':        'Samba',
-    'Sambizanga':   'Sambizanga',
-    'Viana':        'Viana',
-    # Belas e Talatona não existem no GADM 4.1 — em NEW_MUNICIPALITIES
-}
-
-# ── Municípios sem polígono no GADM 4.1 ──────────────────────────────────────
-# Círculos aproximados. Os novos municípios são recortados dos polígonos GADM,
-# por isso têm prioridade no spatial join.
-
-NEW_MUNICIPALITIES = [
-    # Belas — litoral sul, Futungo, Benfica, Quifica
-    {'name': 'Belas',         'lat': -8.960,  'lon': 13.168,  'radius': 0.09},
-    # Talatona — sul, Nova Vida, Morro Bento, Cambamba
-    {'name': 'Talatona',      'lat': -8.912,  'lon': 13.205,  'radius': 0.055},
-    # Hoji Ya Henda — nordeste, Tala-Hady, Cariango, Mabor, Kikolo
-    {'name': 'Hoji Ya Henda', 'lat': -8.7988, 'lon': 13.3136, 'radius': 0.07},
-    # Camama — sul de Kilamba Kiaxi
-    {'name': 'Camama',        'lat': -8.932,  'lon': 13.262,  'radius': 0.05},
-    # Kilamba — Cidade do Kilamba, Quarteirões lat ~-8.99/-9.01
-    {'name': 'Kilamba',       'lat': -8.9988, 'lon': 13.2644, 'radius': 0.05},
-    # Mulenvos — norte
-    {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
-]
-
-# ── Override manual ───────────────────────────────────────────────────────────
-# Bairros na fronteira de polígonos ou mal atribuídos pelo join.
-
-MANUAL_MUNICIPALITY = {
-    "Golf":                      "Kilamba Kiaxi",
-    "Golf II":                   "Kilamba Kiaxi",
-    "Palanca":                   "Kilamba Kiaxi",
-    "Distrito do Kilamba Kiaxe": "Kilamba Kiaxi",
-    "Sector 11A":                "Kilamba Kiaxi",
-    "Bairro São Pedro da Barra": "Sambizanga",
-    "Bairro da Mabor":           "Cacuaco",
-    "Kifangondo":                "Cacuaco",
-}
-
-# ── Risco base por município ──────────────────────────────────────────────────
+# ── Risco base por município ──────────────────────────────────────────────
 
 MUNICIPALITY_RISK = {
     'Belas':          'Alto',
@@ -89,10 +47,200 @@ MUNICIPALITY_RISK = {
     'Mulenvos':       'Alto',
 }
 
-POPULATION_DEFAULT = 50000
-OUTPUT_PATH = "bairros_com_municipio.geojson"
+# ── Mapeamento manual bairro → município ─────────────────────────────────────
+# Baseado na divisão administrativa real de Luanda (2024) e na localização
+# conhecida de cada bairro, cruzando o nome com as coordenadas OSM.
+# Cobre a grande maioria dos 134 nomes únicos. Bairros cujo nome não
+# apareça aqui caem no fallback geométrico (GADM + círculos).
 
-# ── Dados dos bairros ─────────────────────────────────────────────────────────
+BAIRRO_TO_MUNICIPALITY = {
+    # ── Ingombota (centro histórico, faixa costeira) ─────────────────────────
+    "Kinanga":              "Ingombota",
+    "Praia do Bispo":       "Ingombota",
+    "Coreia":               "Ingombota",
+    "Maculusso":            "Ingombota",
+    "Coqueiros":            "Ingombota",
+    "Cruzeiro":             "Ingombota",
+    "Mutamba":              "Ingombota",
+    "Areia Branca":         "Ingombota",
+    "Bairro Azul":          "Ingombota",
+
+    # ── Sambizanga (norte do centro) ─────────────────────────────────────────
+    "Sambizanga":           "Sambizanga",
+    "Boavista":             "Sambizanga",
+    "Miramar":              "Sambizanga",
+    "Bairro Operario":      "Sambizanga",
+    "São Paulo":            "Sambizanga",
+
+    # ── Maianga ───────────────────────────────────────────────────────────────
+    "Maianga":              "Maianga",
+    "Alvalade":             "Maianga",
+    "Prenda":               "Maianga",
+    "Cassenda":             "Maianga",
+    "Cassequel":            "Maianga",
+    "Cassequel do Buraco":  "Maianga",
+    "Martires de Kifangondo": "Maianga",
+    "Calemba":              "Maianga",
+    "Vila Alice":           "Maianga",
+
+    # ── Rangel ────────────────────────────────────────────────────────────────
+    "Bairro Marçal":        "Rangel",
+    "Marcal":               "Rangel",
+    "Valódia":              "Rangel",
+    "Combatentes":          "Rangel",
+    "Terra Nova":           "Rangel",
+    "Precol":               "Rangel",
+    "Bairro Nelito Soares": "Rangel",
+    "Comissão do Rangel":   "Rangel",
+    "Bairro dos Saiotes":   "Rangel",
+    "Bairro Indigena":      "Rangel",
+    "Zangado":              "Rangel",
+    "Vila Clotilde":        "Rangel",
+    "Bairro dos CTT":       "Rangel",
+    "Cuca":                 "Rangel",
+
+    # ── Cazenga ───────────────────────────────────────────────────────────────
+    "Bairro Neves Bendinha": "Cazenga",
+    "Triangulo":            "Cazenga",
+    "Cazenga Popular":      "Cazenga",
+
+    # ── Hoji Ya Henda (novo município, nordeste de Cazenga) ──────────────────
+    "Tala-Hady":            "Hoji Ya Henda",
+    "Cariango":             "Hoji Ya Henda",
+    "Patricio":             "Hoji Ya Henda",
+    "Mabor":                "Hoji Ya Henda",
+    "Bairro Kikolo":        "Hoji Ya Henda",
+    "Bairro São Pedro da Barra": "Hoji Ya Henda",
+    "Bairro da Mabor":      "Hoji Ya Henda",
+
+    # ── Kilamba Kiaxi ─────────────────────────────────────────────────────────
+    "Distrito do Kilamba Kiaxe": "Kilamba Kiaxi",
+    "Golf":                 "Kilamba Kiaxi",
+    "Golf II":              "Kilamba Kiaxi",
+    "Palanca":              "Kilamba Kiaxi",
+    "Sector 11A":           "Kilamba Kiaxi",
+    "Calemba 2":            "Kilamba Kiaxi",
+
+    # ── Cacuaco ───────────────────────────────────────────────────────────────
+    "Kifangondo":           "Cacuaco",
+
+    # ── Camama (novo município, sul de Kilamba Kiaxi) ────────────────────────
+    "Camama":               "Camama",
+    "Sector 4":             "Camama",
+    "Chimbicato":           "Camama",
+    "Projecto Crédito Jovem": "Camama",
+
+    # ── Talatona ──────────────────────────────────────────────────────────────
+    "Talatona":             "Talatona",
+    "Urbanização Nova Vida": "Talatona",
+    "Bairro da Cambamba":   "Talatona",
+    "Bairro Militar":       "Talatona",
+    "Morro Bento II":       "Talatona",
+    "Morro Bento I":        "Talatona",
+    "Fubú":                 "Talatona",
+    "Fubu":                 "Talatona",
+    "Iraque":               "Talatona",
+    "Dangereux":            "Talatona",
+    "Bairro Sossego":       "Talatona",
+    "Patriota":             "Talatona",
+
+    # ── Samba ─────────────────────────────────────────────────────────────────
+    "Samba":                "Samba",
+    "Mabunda":              "Samba",
+    "Corimba":              "Samba",
+    "Gamek a Direita":      "Samba",
+    "Gamek":                "Samba",
+    "Rocha Pinto":          "Samba",
+    "Morro da Luz":         "Samba",
+
+    # ── Viana ─────────────────────────────────────────────────────────────────
+    "Bairro 30":            "Viana",
+    "Sapu km 12":           "Viana",
+    "Bairro Mundimba":      "Viana",
+    "Vila Chinesa":         "Viana",
+    "Kapalanga":            "Viana",
+    "Kapalanga II":         "Viana",
+    "Onjo-Yeto":            "Viana",
+    "Sapu":                 "Viana",
+    "500 casas":            "Viana",
+    "Calumbo":              "Viana",
+    "Jacinto Chipa":        "Viana",
+    "Grafanil Bar":         "Viana",
+    "Estalagem":            "Viana",
+    "Bacia de Retenção do Coelho": "Viana",
+    "Centralidade do Zango V": "Viana",
+
+    # ── Belas ─────────────────────────────────────────────────────────────────
+    "Bairro Mande":         "Belas",
+    "Galenha/Mirantes":     "Belas",
+    "Bairro Kifica":        "Belas",
+    "Futungo I":            "Belas",
+    "Futungo II":           "Belas",
+    "Benfica":              "Belas",
+    "Quifica":              "Belas",
+    "Bairro Cabolombo":     "Belas",
+    "Bairro das Tendas":    "Belas",
+    "Zona Verde":           "Belas",
+    "Zona Verde II":        "Belas",
+    "Bairro Mundial":       "Belas",
+    "Bairro das Salinas":   "Belas",
+    "Bairro da Bandeira":   "Belas",
+    "Bairro Matadouro":     "Belas",
+    "Bairro do Chinguar":   "Belas",
+    "Bairro Vitrona":       "Belas",
+    "Xuxa Dela":            "Belas",
+    "Bairro da Nzinga Mbandi": "Belas",
+
+    # ── Kilamba (Cidade do Kilamba — Quarteirões) ────────────────────────────
+    "Quarteirão Hungu- Bloco A":          "Kilamba",
+    "Quarteirão- Bloco B":                "Kilamba",
+    "Quarteirão Marimba- Bloco C":        "Kilamba",
+    "Quarteirão Serra da Kanda- Bloco H": "Kilamba",
+    "Quarteirão Rio Kwanza- Bloco U":     "Kilamba",
+    "Quarteirão Ngoma- Bloco F":          "Kilamba",
+    "Quarteirão Miradouro Da Lua- Bloco G": "Kilamba",
+    "Quarteirão Rio Chivango- Bloco Y":   "Kilamba",
+    "Quarteirão Vale do Pembe- Bloco K":  "Kilamba",
+    "Quarteirão Rio Curoca- Bloco X":     "Kilamba",
+    "Quarteirão Olombendo- Bloco E":      "Kilamba",
+    "Quarteirão Batuque- Bloco D":        "Kilamba",
+    "Quarteirão Rio Chivango - Bloco W":  "Kilamba",
+    "Quarteirão Rio Cunene- Bloco V":     "Kilamba",
+    "Quarteirão Ekuikui II- Bloco T":     "Kilamba",
+    "Quarteirão Rio Longa- Bloco Z":      "Kilamba",
+    "Quarteirão Nzinga Mbandi- Bloco L":  "Kilamba",
+    "Quarteirão Nhaca Tolo- Bloco N":     "Kilamba",
+    "Quarteirão Mini-Ya-Lukene- Bloco Q": "Kilamba",
+    "Quarteirão Bula Matadi- Bloco R":    "Kilamba",
+    "Quarteirão Kimpavita- Bloco P":      "Kilamba",
+    "Quarteirão N'gola M'bandi- Bloco M": "Kilamba",
+    "Quarteirão Rei Katiavala- Bloco S":  "Kilamba",
+}
+
+# ── GADM NAME_2 → nome do sistema (fallback) ─────────────────────────────────
+GADM_TO_SYSTEM = {
+    'Cacuaco':      'Cacuaco',
+    'Cazenga':      'Cazenga',
+    'Ingombota':    'Ingombota',
+    'KilambaKiaxi': 'Kilamba Kiaxi',
+    'Maianga':      'Maianga',
+    'Rangel':       'Rangel',
+    'Samba':        'Samba',
+    'Sambizanga':   'Sambizanga',
+    'Viana':        'Viana',
+}
+
+# ── Municípios sem polígono no GADM 4.1 (fallback geométrico) ────────────────
+NEW_MUNICIPALITIES = [
+    {'name': 'Belas',         'lat': -8.960,  'lon': 13.168,  'radius': 0.09},
+    {'name': 'Talatona',      'lat': -8.912,  'lon': 13.205,  'radius': 0.055},
+    {'name': 'Hoji Ya Henda', 'lat': -8.7988, 'lon': 13.3136, 'radius': 0.07},
+    {'name': 'Camama',        'lat': -8.932,  'lon': 13.262,  'radius': 0.05},
+    {'name': 'Kilamba',       'lat': -8.9988, 'lon': 13.2644, 'radius': 0.05},
+    {'name': 'Mulenvos',      'lat': -8.7810, 'lon': 13.2685, 'radius': 0.05},
+]
+
+# ── Dados dos bairros (nome, longitude, latitude) ────────────────────────────
 
 BAIRROS_RAW = [
     {"name": "Urbanização Nova Vida",                    "lon": 13.2299477,  "lat": -8.9072958},
@@ -282,25 +430,36 @@ def build_bairros_gdf():
     ]
     gdf = gpd.GeoDataFrame.from_features(features, crs='EPSG:4326')
     print(f"Bairros carregados: {len(gdf)} ({len(BAIRROS_RAW) - len(bairros)} duplicados removidos)")
+
+    # Quantos bairros já têm município via mapeamento manual?
+    n_manual = sum(1 for b in bairros if b['name'] in BAIRRO_TO_MUNICIPALITY)
+    print(f"Atribuídos via mapeamento manual: {n_manual}/{len(bairros)}")
     return gdf
 
 
-# ── Passo 2: municípios ──────────────────────────────────────────────────────
+# ── Passo 2: municípios para fallback geométrico ─────────────────────────────
 
 def build_municipality_gdf():
+    # Se todos os bairros já têm município via mapeamento manual, o fallback
+    # geométrico não é necessário — devolve um GeoDataFrame vazio.
+    bairros_sem_municipio = bairros_gdf['name'].apply(
+        lambda n: n not in BAIRRO_TO_MUNICIPALITY
+    ).sum()
+
+    if bairros_sem_municipio == 0:
+        print("\nTodos os bairros mapeados manualmente — GADM não é necessário.")
+        return gpd.GeoDataFrame(columns=['municipality', 'geometry'], crs='EPSG:4326')
+
     url = "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_AGO_2.json.zip"
-    print("A descarregar polígonos GADM...")
+    print("\nA descarregar polígonos GADM (fallback)...")
     resp = requests.get(url, timeout=90)
     resp.raise_for_status()
     with ZipFile(BytesIO(resp.content)) as zf:
         with zf.open(zf.namelist()[0]) as f:
             gadm = gpd.read_file(f, driver='GeoJSON')
 
-    # ── LINHA QUE FALTAVA: filtrar só Luanda ─────────────────────────────────
     luanda = gadm[gadm['NAME_1'] == 'Luanda'].copy()
-    print(f"  GADM — municípios de Luanda encontrados: {luanda['NAME_2'].tolist()}")
 
-    # Círculos dos novos municípios
     new_geoms = []
     new_rows  = []
     for nm in NEW_MUNICIPALITIES:
@@ -308,64 +467,69 @@ def build_municipality_gdf():
         new_rows.append({'municipality': nm['name'], 'geometry': circle})
         new_geoms.append(circle)
 
-    # União dos círculos para recortar os polígonos GADM
     new_union = unary_union(new_geoms)
 
-    # Polígonos GADM recortados — remove áreas já cobertas pelos novos municípios
     gadm_rows = []
     for _, row in luanda.iterrows():
         sys_name = GADM_TO_SYSTEM.get(row['NAME_2'])
         if not sys_name:
-            print(f"  AVISO: NAME_2={row['NAME_2']!r} sem mapeamento — ignorado")
             continue
         clipped = row.geometry.difference(new_union)
         if not clipped.is_empty:
             gadm_rows.append({'municipality': sys_name, 'geometry': clipped})
 
-    # Novos municípios primeiro (prioridade no sjoin), GADM a seguir
     rows = new_rows + gadm_rows
     mun_gdf = gpd.GeoDataFrame(rows, crs='EPSG:4326')
-    print(f"Municípios prontos: {sorted(mun_gdf['municipality'].tolist())}")
     return mun_gdf
 
 
-# ── Passo 3: spatial join ────────────────────────────────────────────────────
+# ── Passo 3: atribuir município (manual primeiro, geométrico depois) ────────
 
 def enrich(bairros_gdf, mun_gdf):
-    print("A fazer spatial join...")
+    bairros_gdf = bairros_gdf.copy()
 
-    joined = gpd.sjoin(
-        bairros_gdf,
-        mun_gdf[['municipality', 'geometry']],
-        how='left',
-        predicate='within'
-    )
-    # Manter apenas o primeiro match por bairro (novos municípios têm índice menor)
-    joined = joined[~joined.index.duplicated(keep='first')]
+    # 1) Mapeamento manual
+    bairros_gdf['municipality'] = bairros_gdf['name'].map(BAIRRO_TO_MUNICIPALITY)
 
-    missing = joined['municipality'].isna()
-    n_missing = missing.sum()
-    if n_missing:
-        print(f"  {n_missing} bairros fora dos polígonos — fallback por proximidade...")
-        mun_proj     = mun_gdf.to_crs('EPSG:32733')
-        bairros_proj = bairros_gdf.to_crs('EPSG:32733')
-        mun_pts = mun_proj.copy()
-        mun_pts['geometry'] = mun_pts.geometry.centroid
-        for idx in joined[missing].index:
-            pt   = bairros_proj.loc[idx, 'geometry']
-            dist = mun_pts.geometry.distance(pt)
-            joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
+    # 2) Fallback geométrico só se houver bairros sem município E GADM disponível
+    missing_mask = bairros_gdf['municipality'].isna()
+    n_missing = missing_mask.sum()
 
-    # Overrides manuais
-    for idx, row in joined.iterrows():
-        override = MANUAL_MUNICIPALITY.get(row.get('name'))
-        if override:
-            joined.at[idx, 'municipality'] = override
+    if n_missing > 0 and not mun_gdf.empty:
+        print(f"\n{n_missing} bairros sem mapeamento manual — usando fallback geométrico:")
+        missing = bairros_gdf[missing_mask]
+        for _, row in missing.iterrows():
+            print(f"  - {row['name']}")
 
-    joined['risk']       = joined['municipality'].map(MUNICIPALITY_RISK).fillna('Médio')
-    joined['population'] = POPULATION_DEFAULT
+        joined = gpd.sjoin(
+            missing,
+            mun_gdf[['municipality', 'geometry']],
+            how='left',
+            predicate='within'
+        )
+        joined = joined[~joined.index.duplicated(keep='first')]
 
-    return joined[['name', 'municipality', 'risk', 'population', 'geometry']]
+        still_missing = joined['municipality'].isna()
+        if still_missing.any():
+            mun_proj    = mun_gdf.to_crs('EPSG:32733')
+            miss_proj   = missing.to_crs('EPSG:32733')
+            mun_pts = mun_proj.copy()
+            mun_pts['geometry'] = mun_pts.geometry.centroid
+            for idx in joined[still_missing].index:
+                pt   = miss_proj.loc[idx, 'geometry']
+                dist = mun_pts.geometry.distance(pt)
+                joined.at[idx, 'municipality'] = mun_pts.iloc[dist.argmin()]['municipality']
+
+        for idx, row in joined.iterrows():
+            bairros_gdf.at[idx, 'municipality'] = row['municipality']
+
+    elif n_missing > 0:
+        print(f"\n⚠ {n_missing} bairros sem município e GADM indisponível.")
+
+    bairros_gdf['risk']       = bairros_gdf['municipality'].map(MUNICIPALITY_RISK).fillna('Médio')
+    bairros_gdf['population'] = POPULATION_DEFAULT
+
+    return bairros_gdf[['name', 'municipality', 'risk', 'population', 'geometry']]
 
 
 # ── Passo 4: guardar ─────────────────────────────────────────────────────────
