@@ -31,11 +31,20 @@ import numpy as np
 import rasterio
 import rasterio.features
 import rasterio.warp
+from rasterio.enums import Resampling
 from scipy import ndimage
 from shapely.geometry import shape as shapely_shape
 from skimage.morphology import reconstruction
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
+# Factor de downsampling aplicado ao DEM ao carregar — cada +1 aqui reduz a
+# memória em ~4x (metade da resolução em cada eixo). Serve para caber em
+# planos de hosting com pouca RAM (o processo sozinho, a 30m nativos,
+# ultrapassa 512MB). Ajustável por variável de ambiente sem tocar no código:
+# DEM_DOWNSAMPLE=1 mantém os 30m nativos do Copernicus GLO-30 (precisa de
+# ~1-2GB de RAM); o valor por omissão (2) usa ~60m efectivos.
+DEM_DOWNSAMPLE = max(1, int(os.environ.get("DEM_DOWNSAMPLE", "2")))
 
 # Profundidade de água (m) a partir da qual uma célula é considerada
 # "inundada" — abaixo disto é ruído numérico / poça insignificante.
@@ -86,8 +95,12 @@ class FloodModel:
         pop_path = os.path.join(data_dir, "population_luanda.tif")
 
         with rasterio.open(dem_path) as ds:
-            self.dem = ds.read(1).astype("float32")
-            self.dem_transform = ds.transform
+            new_h = max(1, ds.height // DEM_DOWNSAMPLE)
+            new_w = max(1, ds.width // DEM_DOWNSAMPLE)
+            self.dem = ds.read(
+                1, out_shape=(new_h, new_w), resampling=Resampling.average,
+            ).astype("float32")
+            self.dem_transform = ds.transform * ds.transform.scale(ds.width / new_w, ds.height / new_h)
             self.dem_crs = ds.crs
             self.dem_shape = self.dem.shape
 
@@ -99,11 +112,14 @@ class FloodModel:
 
         # Depressões preenchidas por reconstrução morfológica (equivalente a
         # "priority-flood"/imfill): filled - dem = profundidade da depressão
-        # até ao ponto de transbordo mais baixo.
+        # até ao ponto de transbordo mais baixo. Só se guarda a profundidade
+        # derivada — o array preenchido em si não é reutilizado depois, e
+        # mantê-lo em memória custaria outro array do tamanho do DEM.
         seed = self.dem.copy()
         seed[1:-1, 1:-1] = self.dem.max()
-        self.filled_dem = reconstruction(seed, self.dem, method="erosion").astype("float32")
-        self.depression_depth = np.clip(self.filled_dem - self.dem, 0, None)
+        filled_dem = reconstruction(seed, self.dem, method="erosion").astype("float32")
+        self.depression_depth = np.clip(filled_dem - self.dem, 0, None)
+        del seed, filled_dem
 
         # Máscara-semente do "mar": células muito próximas do nível do mar.
         # A área de interesse foi recortada com margem à volta da província,
@@ -373,3 +389,4 @@ class FloodModel:
                 })
 
         return {"type": "FeatureCollection", "features": features}
+
