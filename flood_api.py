@@ -194,9 +194,12 @@ def get_bairros():
 
 @app.route("/api/boundaries", methods=["GET"])
 def get_boundaries():
-    """Contornos administrativos em GeoJSON, independentes de qualquer
-    simulação — usados para desenhar a estrutura de municípios/bairros no
-    mapa assim que a página carrega, antes de o utilizador executar nada."""
+    """Nome + coordenada real (ponto, não polígono) de municípios/bairros —
+    independente de qualquer simulação, usado só para rotular o mapa assim
+    que a página carrega. Devolve pontos de propósito: um polígono grande
+    com symbol-placement:"point" faz o MapLibre repetir o rótulo uma vez por
+    "tile" interno de desenho quando o zoom é alto — um bairro aparecia com
+    o nome duplicado em vários sítios do mapa."""
     level = request.args.get("level", "municipality")
     municipality = request.args.get("municipality", "all")
 
@@ -205,16 +208,23 @@ def get_boundaries():
         if municipality and municipality != "all":
             norm_mun = normalize(municipality)
             gdf = gdf[gdf["municipality"].apply(lambda v: normalize(v) == norm_mun)]
-        features = [{
-            "type": "Feature", "geometry": row.geometry.__geo_interface__,
-            "properties": {"name": row.name, "municipality": row.municipality},
-        } for row in gdf.itertuples()]
+        features = []
+        for row in gdf.itertuples():
+            pt = BAIRRO_POINT_LOOKUP.get((normalize(row.municipality), normalize(row.name)))
+            lon, lat = (pt.x, pt.y) if pt is not None else (row.geometry.centroid.x, row.geometry.centroid.y)
+            features.append({
+                "type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {"name": row.name, "municipality": row.municipality},
+            })
         return jsonify({"success": True, "geojson": {"type": "FeatureCollection", "features": features}})
 
-    features = [{
-        "type": "Feature", "geometry": row.geometry.__geo_interface__,
-        "properties": {"name": row.NAME_2, "risk": risk_for_municipality(row.NAME_2)},
-    } for row in municipalities_gdf.itertuples()]
+    features = []
+    for row in municipalities_gdf.itertuples():
+        c = row.geometry.centroid
+        features.append({
+            "type": "Feature", "geometry": {"type": "Point", "coordinates": [c.x, c.y]},
+            "properties": {"name": row.NAME_2, "risk": risk_for_municipality(row.NAME_2)},
+        })
     return jsonify({"success": True, "geojson": {"type": "FeatureCollection", "features": features}})
 
 
